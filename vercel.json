@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "flask",
+  "buildCommand": "npm ci && npm run setup:ocr",
+  "functions": {
+    "app.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{node_modules/**,tests/**,test-results/**,data/**,reference/**,.venv/**,.tools/**,*.zip,*.jpeg,.env*,scripts/**}"
+    }
+  }
+}

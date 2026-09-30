@@ -1,0 +1,16 @@
+{
+  "name": "fuel-log",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "test:ui": "node tests/browser.cjs",
+    "setup:ocr": "node scripts/setup-ocr.cjs"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "tesseract.js": "6.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

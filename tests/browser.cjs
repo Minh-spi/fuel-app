@@ -1,0 +1,99 @@
+const {chromium,expect}=require('@playwright/test');
+const {spawn,spawnSync}=require('node:child_process');
+const fs=require('node:fs/promises');
+const path=require('node:path');
+const port=8127,base=`http://127.0.0.1:${port}`;
+async function main(){
+  await fs.mkdir('test-results',{recursive:true});
+  if(!process.env.TEST_DATABASE_URL)throw new Error('Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test.');
+  const python=process.env.FUEL_PYTHON || (process.platform==='win32'?'.venv\\Scripts\\python.exe':'.venv/bin/python');
+  const reset=spawnSync(python,['tests/db_support.py'],{env:process.env,windowsHide:true,stdio:'inherit'});
+  if(reset.status!==0)throw new Error('Test database reset refused/failed.');
+  const server=spawn(python,['server.py','--port',String(port)],{env:{...process.env,DATABASE_URL:process.env.TEST_DATABASE_URL},windowsHide:true,stdio:'ignore'});
+  let browser;
+  try{
+    for(let i=0;i<50;i++){try{if((await fetch(base+'/api/state')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+    browser=await chromium.launch({channel:'msedge',headless:true});
+    const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(base);
+    await page.locator('#add-vehicle').click();
+    await page.locator('#vehicle-form [name=name]').fill('Xe Đà Nẵng');
+    await expect(page.locator('#vehicle-form [name=fuel_type]')).toHaveValue('E10 RON 95-III');
+    await page.locator('#vehicle-form [type=submit]').click();
+    await expect(page.locator('#vehicle-dialog')).not.toBeVisible();
+    await page.locator('#prices-open').click();
+    await page.locator('#manual-price summary').click();
+    await page.locator('#price-form [name=unit_price_vnd]').fill('25000');
+    await page.locator('#price-form [name=effective_at]').fill('2026-01-01T00:00');
+    await page.locator('#price-form [type=submit]').click();
+    await expect(page.locator('#prices-status')).toContainText('Đã lưu giá');
+    await page.locator('#prices-dialog .close').click();
+    await page.locator('#add-log').click();
+    await page.locator('[data-amount="50000"]').click();
+    await page.locator('#log-form [name=filled_on]').fill('2026-08-01');
+    await expect(page.locator('#liters-preview')).toHaveText('2 lít');
+    await page.locator('#save-log').click();
+    await expect(page.locator('#log-dialog')).not.toBeVisible();
+    await expect(page.locator('#count')).toHaveText('1');
+    await expect(page.locator('#cards')).toContainText('Mốc bắt đầu');
+    // Edit missing ODO and run real browser OCR on a deterministic test image.
+    await page.locator('#cards [data-edit]').click();
+    await page.locator('#camera-open').click();
+    const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=900;c.height=220;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,900,220);x.fillStyle='black';x.font='bold 100px Arial';x.fillText('17054.5',65,145);return c.toDataURL().split(',')[1];});
+    await page.locator('#photo-file').setInputFiles({name:'odo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+    await expect(page.locator('#crop-area')).toBeVisible();
+    await page.locator('#read-odo').click();
+    await expect(page.locator('#ocr-result')).toBeVisible({timeout:60000});
+    await expect(page.locator('#ocr-number')).toHaveValue('17054.5');
+    await page.locator('#use-odo').click();
+    await expect(page.locator('#odo')).toHaveValue('17054.5');
+    await page.locator('#save-log').click();
+    await expect(page.locator('#log-dialog')).not.toBeVisible();
+    await page.locator('#add-log').click();
+    await page.locator('[data-amount="60000"]').click();
+    await page.locator('#log-form [name=filled_on]').fill('2026-08-10');
+    await page.locator('#odo').fill('17200');
+    await expect(page.locator('#distance-preview')).toContainText('145,5');
+    await page.locator('#save-log').click();
+    await expect(page.locator('#count')).toHaveText('2');
+    await expect(page.locator('#distance')).toHaveText('145,5 km');
+    await page.screenshot({path:'test-results/mobile.png',fullPage:true});
+    if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Mobile page overflows horizontally');
+    // Historical boundary needs a time, not today's price.
+    await page.locator('#prices-open').click();
+    await page.locator('#price-form [name=unit_price_vnd]').fill('27000');
+    await page.locator('#price-form [name=effective_at]').fill('2026-08-15T15:00');
+    await page.locator('#price-form [type=submit]').click();
+    await expect(page.locator('#price-list')).toContainText('27.000');
+    await page.locator('#prices-dialog .close').click();
+    await page.locator('#add-log').click();
+    await page.locator('[data-amount="50000"]').click();
+    await page.locator('#log-form [name=filled_on]').fill('2026-08-15');
+    await expect(page.locator('#quote-status')).toContainText('Chọn giờ');
+    await expect(page.locator('#save-log')).toBeDisabled();
+    await page.locator('#log-form [name=filled_time]').fill('14:59');
+    await expect(page.locator('#liters-preview')).toHaveText('2 lít');
+    await page.locator('#log-dialog .close').click();
+    // Error from scraper remains actionable; existing data stays visible.
+    await page.route('**/api/prices/sync',route=>route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Nguồn giá tạm thời không truy cập được.'})}));
+    await page.locator('#prices-open').click();await page.locator('#sync-prices').click();
+    await expect(page.locator('#prices-status')).toContainText('không truy cập');await page.locator('#prices-dialog .close').click();
+    await page.reload();await expect(page.locator('#count')).toHaveText('2');
+    const data=await (await fetch(base+'/api/state')).json();
+    if(data.logs[0].odo_source!=='photo_confirmed')throw new Error('OCR provenance not saved');
+    await page.setViewportSize({width:1440,height:1000});
+    await expect(page.locator('.table-wrap')).toBeVisible();
+    await page.screenshot({path:'test-results/desktop.png',fullPage:true});
+    // Smaller phone and second vehicle isolation.
+    await page.setViewportSize({width:360,height:800});
+    await page.locator('#add-vehicle').click();await page.locator('#vehicle-form [name=name]').fill('Xe thứ hai');
+    await page.locator('#vehicle-form [type=submit]').click();await expect(page.locator('#count')).toHaveText('0');
+    await page.locator('#vehicle').selectOption('1');await expect(page.locator('#count')).toHaveText('2');
+    page.on('dialog',d=>d.accept());await page.locator('#cards [data-delete]').last().click();
+    await expect(page.locator('#count')).toHaveText('1');await expect(page.locator('#distance')).toHaveText('0 km');
+    if(errors.length)throw new Error(errors.join('\n'));
+    console.log('PASS: mobile + desktop, dated prices, missing ODO, real OCR, edit, baseline, multiple vehicles, persistence, network failure.');
+  }finally{if(browser)await browser.close();server.kill();}
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});

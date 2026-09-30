@@ -1,0 +1,15 @@
+data/
+__pycache__/
+*.pyc
+node_modules/
+public/vendor/
+reference/*.html
+reference/*.js
+test-results/
+.venv/
+.vercel/
+.env*
+!.env.example
+*.zip
+*.sqlite3
+.tools/
