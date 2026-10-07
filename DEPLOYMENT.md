@@ -1,141 +1,55 @@
-# Triển khai Vercel + Supabase
+# Vercel + Supabase: triển khai và nâng cấp v2
 
-Đã kiểm tra `https://fuel-app-sandy.vercel.app/api/state`: Function chạy nhưng trả 503 vì thiếu `DATABASE_URL`. Người dùng xác nhận chưa tạo Supabase; chưa có database cloud để kết nối hoặc import.
+## Nếu đang chạy bản cũ
 
-## Sửa lỗi trên bản Vercel hiện tại
+Migration 002 thay đổi tên bảng/cột và ID; phải nâng cấp backend/frontend cùng schema. Không chạy migration production trong lúc app cũ tiếp tục ghi.
 
-Upload code không tự tạo Supabase hoặc biến môi trường. `.env.example` là mẫu; `.env.local` không upload lên Vercel.
+1. Thử migration trên database thử hoặc bản sao. Giữ commit/deployment cũ và backup PostgreSQL trước thay đổi. Dừng ghi/tạm bảo trì app khi chuyển production.
+2. Điền `MIGRATION_DATABASE_URL` vào `.env.local` local, dùng admin Session pooler (5432) hoặc direct URL đúng project. `DATABASE_URL` dùng runtime Transaction pooler (6543). Không nhầm với TEST_DATABASE_URL.
+3. Chạy `.venv\Scripts\python.exe scripts/migrate.py`. Script chạy migration còn thiếu trong transaction, trước 002 khóa ghi và xuất bản sao các bảng v1/sequence vào `note/backups/`. Nếu không ghi được backup hoặc SQL lỗi, rollback transaction. Bản JSON này dùng đối chiếu/khôi phục thủ công với schema v1; không thay thế backup PostgreSQL đầy đủ và không có nút restore tự động.
+4. Chạy `.venv\Scripts\python.exe scripts/create_runtime_role.py` để bảo đảm quyền đọc danh mục và dùng sequence mới. Không đổi mật khẩu role đang có.
+5. Chạy `.venv\Scripts\python.exe scripts/check_database.py`, cần `database: ready`.
+6. Deploy code mới lên Vercel rồi kiểm tra `/api/health`, `/api/state`, thêm/sửa/xóa, nhiều xe, OCR, giá theo ngày. Mở lại ghi sau khi kiểm tra. Reload các tab cũ để lấy frontend mới.
 
-1. Supabase → tạo/mở project → **Connect** → **Transaction pooler**. Lấy PostgreSQL URI, không dùng URL `https`, anon key hay service-role key. Chưa tạo `fuel_runtime` thì không tự đổi username thành role này trước bước 3.
-2. Điền `.env.local`: `MIGRATION_DATABASE_URL` dùng Session pooler/admin; `RUNTIME_DB_PASSWORD` là mật khẩu riêng cho runtime role; `DATABASE_URL` dùng Transaction pooler, user `fuel_runtime.PROJECT_REF` và mật khẩu runtime. Giữ host/project từ dashboard; URL-encode ký tự đặc biệt trong mật khẩu.
-3. Chạy `.venv\Scripts\python.exe scripts/setup_database.py`. Lệnh tạo schema, tạo role nếu thiếu/cấp lại quyền nếu đã có, kiểm tra runtime. Không import/xóa dữ liệu hoặc đổi mật khẩu role đã tồn tại. Chạy script import riêng nếu cần lịch sử SQLite.
-4. **Vercel → project → Settings → Environment Variables**: thêm `DATABASE_URL` bằng runtime URL đã kiểm tra, chọn **Production** cho domain chính. Đặt `APP_ORIGIN=https://fuel-app-sandy.vercel.app`. Preview dùng database thử riêng. Không đặt admin URL lên Vercel.
-5. Upload code mới rồi **Deployments → Redeploy**. Chỉ Save biến môi trường không cập nhật deployment đang chạy.
-6. Mở `/api/health`: kết quả đúng là `{"ok":true,"database":"ready"}`. Endpoint chỉ kiểm tra đọc/quyền, không tạo bảng hoặc trả dữ liệu cá nhân. Sau đó kiểm tra `/api/state` và lưu log.
+Nếu có lỗi sau cutover, không chỉ rollback deployment về code cũ: schema mới không tương thích code cũ. Cần khôi phục schema/dữ liệu từ backup trong cửa sổ bảo trì, giữ mọi dữ liệu mới phát sinh để đối chiếu. Không drop bảng production để thử lại.
 
-`scripts/check_database.py` kiểm tra runtime riêng. Backend cũng chấp nhận `SUPABASE_DB_URL` hoặc `POSTGRES_URL` khi chưa có `DATABASE_URL`; không tự chuyển database nếu biến ưu tiên đã có nhưng sai.
+## Nếu tạo mới
 
-| Mã lỗi | Cách xử lý |
+Tạo Supabase project → Connect → sao chép Session/Transaction pooler URL, không suy ra host bằng tên vùng. Trong `.env.local`:
+
+| Biến | Cách dùng |
 | --- | --- |
-| `database_configuration` | Thiếu/sai URI, còn placeholder hoặc timeout sai |
-| `database_connection` | Kiểm tra pooler, user/mật khẩu, project pause, mạng/SSL; không phải lỗi kết nối nào cũng phân biệt được nguyên nhân xác thực |
-| `database_authentication` | PostgreSQL trả mã xác thực thất bại |
-| `database_schema` | Chạy migration vào đúng project/database |
-| `database_permissions` | Chạy lại script cấp quyền; không đổi mật khẩu role hiện có |
-| `database_operation` | Kiểm tra schema và log Function; API không trả SQL/credentials |
+| MIGRATION_DATABASE_URL | Admin Session pooler, chỉ local |
+| RUNTIME_DB_PASSWORD | Mật khẩu riêng cho role mới fuel_runtime, chỉ local |
+| DATABASE_URL | Transaction pooler; user fuel_runtime.PROJECT_REF; mật khẩu runtime |
+| APP_ORIGIN | URL app trên Vercel hoặc http://127.0.0.1:8000 ở local |
+| TEST_DATABASE_URL | Database thử riêng, tên kết thúc _test |
 
-## 1. Supabase và biến môi trường
+URL-encode ký tự đặc biệt trong mật khẩu của URI. RUNTIME_DB_PASSWORD dùng mật khẩu nguyên bản. Không dùng URL https Supabase, anon/service-role key thay cho PostgreSQL URI. Chạy `scripts/setup_database.py` để tạo schema, role và kiểm tra. Không tự import SQLite.
 
-Tạo project Supabase. Trong **Connect**, lấy session pooler URL để migration và transaction pooler URL để chạy app. Dùng host dashboard cung cấp. Mật khẩu có ký tự đặc biệt cần URL-encode trong URL.
+Runtime URL có thể dùng SUPABASE_DB_URL/POSTGRES_URL nếu chưa có DATABASE_URL, nhưng nên thống nhất DATABASE_URL. Backend tắt prepared statements cho Transaction pooler, bắt buộc SSL với host remote.
 
-Sao chép `.env.example` thành `.env.local` nếu chưa có, điền:
+## GitHub và Vercel
 
-| Biến | Nơi dùng | Nội dung |
-| --- | --- | --- |
-| `MIGRATION_DATABASE_URL` | Chỉ local | Login quản trị, session pooler 5432 hoặc direct connection phù hợp mạng, `sslmode=require` |
-| `RUNTIME_DB_PASSWORD` | Chỉ local lúc tạo role | Mật khẩu riêng đủ mạnh cho `fuel_runtime` |
-| `DATABASE_URL` | Local/Vercel | Transaction pooler 6543, user `fuel_runtime.PROJECT_REF`, mật khẩu runtime, `sslmode=require` |
-| `APP_ORIGIN` | Local/Vercel | URL app; local `http://127.0.0.1:8000` |
-| `DB_CONNECT_TIMEOUT_SECONDS` | Tùy chọn | Mặc định 5 |
-| `DB_STATEMENT_TIMEOUT_MS` | Tùy chọn | Mặc định 10000 |
-| `PRICE_FETCH_TIMEOUT_SECONDS` | Tùy chọn | Mặc định 15, tối đa 20 cho mỗi request nguồn giá |
-| `TEST_DATABASE_URL` | Chỉ test | Database UTF-8 riêng, tên kết thúc `_test`, quyền tạo schema/truncate |
+Commit `backend/`, `migrations/`, `public/` (trừ vendor), `scripts/`, `tests/`, app.py, server.py, prices.py, requirements*.txt, package*.json, vercel.json, .python-version, .gitignore, .vercelignore, .env.example và tài liệu README/DATABASE/DEPLOYMENT.
 
-Không cần Supabase anon/service-role key; backend dùng PostgreSQL trực tiếp. Không đưa secrets vào JavaScript, GitHub hoặc chat. `.env.local` chỉ tự nạp local; Vercel đọc environment variables của project.
+Không commit `note/`, `.env.local`, `.venv/`, node_modules, public/vendor, __pycache__. Ảnh mẫu từng ở root đã chuyển vào note; Git sẽ ghi nhận xóa đường dẫn cũ khi bạn stage thay đổi. Không commit file chứa mật khẩu.
 
-## 2. Schema và runtime role
+Vercel preset Flask; entrypoint app.py; build `npm ci && npm run setup:ocr`; không đặt Output Directory thành public. Public assets qua CDN; server.py chỉ dùng local. Vercel Environment Variables chỉ cần DATABASE_URL, APP_ORIGIN và timeout nếu tùy chỉnh. Không upload MIGRATION_DATABASE_URL/admin password. Save biến môi trường xong cần redeploy. Preview dùng database thử riêng.
+
+App chưa có đăng nhập/phân quyền người dùng; bảo vệ deployment trước khi dùng dữ liệu cá nhân. Origin check không thay thế xác thực. Không thêm fuel_app vào Supabase exposed schemas.
+
+## SQLite cũ
+
+Đã chuyển vào `note/data/fuel.sqlite3`. Script import đọc-only, mặc định dry-run; chỉ nhận target chưa có xe/giá/log/metadata:
 
 ```powershell
-.venv\Scripts\python.exe scripts/migrate.py
-.venv\Scripts\python.exe scripts/create_runtime_role.py
-```
-
-Migration có transaction, khóa advisory và bảng phiên bản. Chạy lại không tạo dữ liệu mẫu. Script role tạo nếu thiếu và cấp lại quyền nếu đã có, không tự đổi mật khẩu. Sau khi tạo role, điền URL runtime; có thể bỏ `RUNTIME_DB_PASSWORD` khỏi môi trường.
-
-Schema `fuel_app` gồm `vehicles`, `fuel_prices`, `fuel_logs`, `metadata`, `app_locks`, `schema_migrations`. Không thêm schema vào Supabase **exposed schemas**. Runtime role có CRUD năm bảng nghiệp vụ và quyền dùng sequence, không có quyền migration. Khóa xe bảo vệ ODO khi ghi đồng thời. Sync dùng lease 90 giây và token chống request hết hạn ghi đè request mới; tải web ngoài transaction.
-
-## 3. Chuyển SQLite
-
-Trước cutover, dừng ghi trên app SQLite cũ và sao lưu `data/fuel.sqlite3`. Nếu dùng WAL, dùng SQLite backup hoặc dừng server/checkpoint trước khi sao chép. Giữ code cũ và backup riêng; JSON export không thay thế backup database.
-
-```powershell
-# Kiểm tra nguồn, không cần PostgreSQL:
 .venv\Scripts\python.exe scripts/migrate_sqlite_to_postgres.py --audit-only
-# Import thử, đối chiếu mọi trường và rollback:
 .venv\Scripts\python.exe scripts/migrate_sqlite_to_postgres.py
-# Sau khi dry-run đạt, commit vào target trống:
+# Chỉ commit sau khi đã kiểm tra dry-run:
 .venv\Scripts\python.exe scripts/migrate_sqlite_to_postgres.py --apply
 ```
 
-Thêm `--source <đường-dẫn-backup>` nếu cần. SQLite mở chỉ đọc; bốn bảng dữ liệu ở target phải trống. Script giữ ID, liên kết giá, ODO null, snapshot Decimal và timestamp, không tính lại lít lịch sử. Đối chiếu mọi trường/quãng đường trước commit và chỉnh sequence. Lỗi rollback toàn bộ. Chạy lại trên target có dữ liệu sẽ bị từ chối, không ghi đè.
+Nếu file nằm nơi khác, thêm `--source <path>`. Không upload SQLite lên GitHub/Vercel.
 
-Thử local bằng runtime URL; đối chiếu số xe/log, tiền, lít, ODO và baseline với audit. Không tiếp tục ghi song song SQLite sau cutover. Nếu PostgreSQL đã có dữ liệu mới, rollback phải bảo toàn dữ liệu mới đó trước khi quay lại app cũ.
-
-## 4. File upload GitHub
-
-Có thể chạy `.venv\Scripts\python.exe scripts/package_deploy.py` để tạo `fuel-vercel-source.zip` chỉ chứa mã nguồn theo danh sách cố định, không kèm secrets/database. Giải nén rồi upload **nội dung bên trong** vào root GitHub repository; không upload riêng file ZIP để deploy.
-
-Giữ cấu trúc sau:
-
-```text
-.gitignore
-.vercelignore
-.python-version
-.env.example
-vercel.json
-requirements.txt
-requirements-dev.txt
-package.json
-package-lock.json
-app.py
-server.py
-prices.py
-README.md
-DEPLOYMENT.md
-backend/__init__.py
-backend/config.py
-backend/db.py
-backend/diagnostics.py
-backend/serialization.py
-backend/services.py
-migrations/001_initial.sql
-scripts/setup-ocr.cjs
-scripts/migrate.py
-scripts/create_runtime_role.py
-scripts/migrate_sqlite_to_postgres.py
-scripts/package_deploy.py
-scripts/check_database.py
-scripts/setup_database.py
-public/index.html
-public/app.js
-public/ocr.js
-public/style.css
-public/mobile.css
-public/icon.svg
-tests/test_fuel.py
-tests/test_database_config.py
-tests/test_migration_api.py
-tests/db_support.py
-tests/browser.cjs
-tests/fixtures/legacy_server.py
-```
-
-Không upload `.env.local`, `.env`, `data/`, database/backup, `.venv/`, `.tools/`, `.vercel/`, `node_modules/`, `public/vendor/`, `test-results/` hoặc ZIP. Ảnh tham chiếu không cần deploy. Legacy server chỉ là fixture đối chiếu test, bị loại khỏi deployment.
-
-## 5. Vercel
-
-Import repository; root là thư mục chứa `app.py`. Preset **Flask** đã ghi trong `vercel.json`, build `npm ci && npm run setup:ocr`, Function tối đa 60 giây. Không đặt Output Directory thành `public`, không chọn static-only, không chạy `python server.py`. Vercel nạp `app` từ `app.py`; assets `public/**` qua CDN; OCR được tạo bằng npm lúc build.
-
-Model OCR `@tesseract.js-data/eng` được pin cùng `package-lock.json`; bước `setup:ocr` chỉ sao chép tài nguyên đã cài, không tải thêm từ CDN.
-
-Nếu dùng CLI thay GitHub Import: chạy `npx vercel login`, đăng nhập qua trình duyệt, rồi `npx vercel link`. Sau khi cấu hình biến môi trường, chạy `npx vercel --prod`. Nếu CLI báo token không hợp lệ, đăng nhập lại trước; không gửi token vào chat. Lần kiểm tra local hiện tại chưa chạy được Vercel build vì CLI báo token lưu trên máy không hợp lệ.
-
-Đặt `DATABASE_URL`, `APP_ORIGIN` và timeout tùy chọn trong Vercel Environment Variables. Không đưa migration URL/password quản trị lên Vercel. Preview thử ghi dùng database riêng. Redeploy khi đổi biến môi trường.
-
-App chưa có đăng nhập; API đọc/ghi toàn bộ dữ liệu. Origin check không phải xác thực. Trước khi dùng dữ liệu cá nhân, bảo vệ truy cập cho cả domain production và `/api/*`, hoặc giữ deployment thử với dữ liệu mẫu đến khi có xác thực. Schema Supabase riêng tư không bảo vệ HTTP API Flask.
-
-Sau deploy: kiểm tra tám API, static assets, OCR, mobile/desktop, reload, thêm/sửa/xóa trên database thử và sync Petrolimex từ Vercel. Theo dõi lỗi SSL/quyền DB, cold start, connection pool và timeout. Test parser bằng mock local không xác minh khả năng truy cập nguồn giá từ cloud.
-
-Không Cron/background thread. UI vẫn giữ câu chữ cũ về tự sync 6 giờ theo yêu cầu không sửa UI; thực tế chỉ sync khi gọi API.
-
-Tham khảo: [Flask trên Vercel](https://vercel.com/docs/frameworks/backend/flask), [kết nối Supabase PostgreSQL](https://supabase.com/docs/guides/database/connecting-to-postgres). Transaction pooler không hỗ trợ prepared statements; code đặt `prepare_threshold=None` và dùng transaction ngắn.
+Tham khảo chính thức: https://vercel.com/docs/frameworks/backend/flask và https://supabase.com/docs/guides/database/connecting-to-postgres.

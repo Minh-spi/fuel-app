@@ -54,7 +54,7 @@ def health():
 @app.get('/api/quote')
 def quote():
     with connect(readonly=True) as db:
-        return respond(services.quote(db, request.args['vehicle_id'], request.args['filled_on'], request.args.get('filled_time')))
+        return respond(services.quote(db, request.args['vehicle_id'], request.args['refueled_on'], request.args.get('refueled_time')))
 
 def mutate(action):
     data = read_data()
@@ -69,15 +69,15 @@ def vehicles():
 
 @app.post('/api/logs')
 def logs():
-    return mutate(lambda db, data: services.save_log(db, data, int(data['id']) if data.get('id') else None))
+    return mutate(lambda db, data: services.save_log(db, data, data.get('id') or None))
 
 @app.post('/api/logs/delete')
 def delete_log():
-    return mutate(lambda db, data: services.delete_log(db, int(data['id'])))
+    return mutate(lambda db, data: services.delete_log(db, data['id']))
 
 @app.post('/api/prices')
 def prices():
-    return mutate(lambda db, data: services.put_price(db, {**data, 'source':'manual', 'source_url':'', 'source_updated_at':None}))
+    return mutate(lambda db, data: services.put_price(db, {**data, 'source_url':'manual', 'source_updated_at':None}))
 
 @app.post('/api/prices/sync')
 def sync():

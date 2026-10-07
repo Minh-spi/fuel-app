@@ -73,47 +73,84 @@ def summaries(rows):
             distance_tenths=odos[-1]-odos[0] if len(odos)>1 else 0,baseline_id=logs[0]['id'] if logs else None)
     return {'counts':{t:len(rows[t]) for t in TABLES},'vehicles':totals}
 
+def convert_rows(rows, fuels):
+    """Translate legacy SQLite records without recalculating historical money/volume."""
+    result={t:[] for t in ('vehicles','fuel_prices','refueling_logs','app_metadata')}
+    for table in TABLES:
+        for original in rows[table]:
+            row=dict(original)
+            if table=='vehicles':
+                row['id']='V'+str(row['id'])
+                row['default_fuel_type_id']=fuels[row.pop('fuel_type')]
+                row['license_plate']=row.get('license_plate') or None
+                row['updated_at']=row['created_at']
+            elif table=='fuel_prices':
+                row['id']='P'+str(row['id'])
+                row['fuel_type_id']=fuels[row.pop('fuel_type')]
+                source=row.pop('source')
+                row['source_url']='manual' if source=='manual' else row['source_url'] or 'https://www.petrolimex.com.vn/'
+                row['unit_price_vnd_per_liter']=row.pop('unit_price_vnd')
+                row['created_at']=row['updated_at']=row.pop('fetched_at')
+            elif table=='fuel_logs':
+                row['id']='R'+str(row['id'])
+                row['vehicle_id']='V'+str(row['vehicle_id'])
+                row['fuel_type_id']=fuels[row.pop('fuel_type')]
+                row['fuel_price_id']='P'+str(row.pop('price_id')) if row.get('price_id') is not None else None
+                row.pop('price_id',None)
+                row['refueled_on']=row.pop('filled_on')
+                row['refueled_time']=row.pop('filled_time')
+                for key in ('volume_source','is_full_tank','price_source'):row.pop(key,None)
+            target={'fuel_logs':'refueling_logs','metadata':'app_metadata'}.get(table,table)
+            result[target].append(row)
+    return result
+
 def import_sqlite(path, url, apply=False):
-    rows = read_source(path)
-    source_summary = summaries(rows)
-    with connect(url, migration=True) as db:
-        # Exclusivity prevents requests from adding data while target emptiness is checked/imported.
-        db.execute('LOCK TABLE vehicles, fuel_prices, fuel_logs, metadata IN ACCESS EXCLUSIVE MODE')
-        for table in TABLES:
+    original=read_source(path)
+    source_summary=summaries(original)
+    with connect(url,migration=True) as db:
+        db.execute('LOCK TABLE vehicles,fuel_prices,refueling_logs,app_metadata,fuel_types IN ACCESS EXCLUSIVE MODE')
+        targets=('vehicles','fuel_prices','refueling_logs','app_metadata')
+        for table in targets:
             if db.execute(sql.SQL('SELECT 1 FROM {} LIMIT 1').format(sql.Identifier(table))).fetchone():
                 raise ValueError('Target must be empty. No data was overwritten.')
-        for table in TABLES:
+        fuels={r['name']:r['id'] for r in db.execute('SELECT id,name FROM fuel_types')}
+        for table in TABLES[:3]:
+            for row in original[table]:
+                name=row['fuel_type']
+                if name not in fuels:
+                    record=db.execute("INSERT INTO fuel_types(code,name,category) VALUES('LEGACY_'||md5(%s),%s,'other') RETURNING id",(name,name)).fetchone()
+                    fuels[name]=record['id']
+        rows=convert_rows(original,fuels)
+        for table in targets:
             for row in rows[table]:
-                query = sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(sql.Identifier(table),
+                query=sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(sql.Identifier(table),
                     sql.SQL(',').join(map(sql.Identifier,row)),sql.SQL(',').join(sql.Placeholder() for _ in row))
-                db.execute(query, tuple(row.values()))
-        imported = {}
-        for table in TABLES:
-            imported[table] = list(db.execute(sql.SQL('SELECT * FROM {} ORDER BY {}').format(sql.Identifier(table), sql.Identifier('key' if table=='metadata' else 'id'))))
-            if len(rows[table]) != len(imported[table]):
-                raise ValueError(f'Count mismatch: {table}')
-            for original, actual in zip(rows[table], imported[table]):
-                if any(actual[k] != value for k, value in original.items()):
-                    raise ValueError(f'Value mismatch: {table}, record {original.get("id",original.get("key"))}')
-        # Also exercise the runtime snapshot before committing.
-        state = services.snapshot(db)
-        for vehicle_id, expected in source_summary['vehicles'].items():
-            logs = [l for l in state['logs'] if l['vehicle_id']==int(vehicle_id)]
-            measured = round(sum(l['distance_km'] or 0 for l in logs)*10)
-            if measured != expected['distance_tenths']:
-                raise ValueError(f'Distance mismatch: vehicle {vehicle_id}')
+                db.execute(query,tuple(row.values()))
+        for table in targets:
+            actual=list(db.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))))
+            key='key' if table=='app_metadata' else 'id'
+            by_id={r[key]:r for r in actual}
+            if len(actual)!=len(rows[table]):raise ValueError('Count mismatch: '+table)
+            for row in rows[table]:
+                if any(by_id[row[key]][k]!=v for k,v in row.items()):raise ValueError('Value mismatch: '+table)
+        state=services.snapshot(db)
+        for vehicle_id,expected in source_summary['vehicles'].items():
+            logs=[l for l in state['logs'] if l['vehicle_id']=='V'+vehicle_id]
+            if round(sum(l['distance_km'] or 0 for l in logs)*10)!=expected['distance_tenths']:
+                raise ValueError('Distance mismatch: '+vehicle_id)
         if apply:
-            for table in TABLES[:3]:
-                next_id = max((r['id'] for r in rows[table]), default=0) + 1
-                # ALTER SEQUENCE restart is transactional, unlike setval().
-                db.execute(sql.SQL('ALTER SEQUENCE fuel_app.{} RESTART WITH {}').format(sql.Identifier(table+'_id_seq'), sql.Literal(next_id)))
-        else:
-            db.rollback()
+            for table in targets[:3]:
+                maximum=max((int(r['id'][1:]) for r in rows[table]),default=0)
+                seq=table+'_id_seq'
+                last=db.execute(sql.SQL('SELECT last_value,is_called FROM fuel_app.{}').format(sql.Identifier(seq))).fetchone()
+                next_id=max(maximum+1,last['last_value']+int(last['is_called']))
+                db.execute(sql.SQL('ALTER SEQUENCE fuel_app.{} RESTART WITH {}').format(sql.Identifier(seq),sql.Literal(next_id)))
+        else:db.rollback()
     return {**source_summary,'applied':apply,'verified_all_fields':True}
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--source', default='data/fuel.sqlite3')
+    parser.add_argument('--source', default='note/data/fuel.sqlite3')
     parser.add_argument('--apply', action='store_true', help='Commit into an empty target after full verification.')
     parser.add_argument('--audit-only', action='store_true', help='Inspect SQLite without connecting to PostgreSQL.')
     args=parser.parse_args()

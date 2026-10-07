@@ -1,53 +1,59 @@
-# Fuel — Nhật ký đổ xăng
+# Fuel — Nhật ký đổ nhiên liệu
 
-Frontend HTML/CSS/JavaScript và Tesseract.js giữ nguyên. Backend Flask/Python 3.12 dùng PostgreSQL (Supabase), entrypoint `app.py` cho Vercel Functions. `server.py` chạy cùng backend ở local. SQLite chỉ còn dùng để đọc dữ liệu cũ khi migration.
+Flask/Python 3.12 + Supabase PostgreSQL, frontend HTML/CSS/JavaScript responsive, OCR Tesseract.js chạy trên trình duyệt. Vercel nạp `app` từ `app.py`; `server.py` là launcher local. Không có SQLite runtime, thread đồng bộ nền hoặc Cron.
 
-Nếu Vercel báo thiếu `DATABASE_URL`: cần tạo Supabase project trước, sau đó thiết lập database và biến môi trường theo [hướng dẫn sửa lỗi deployment](DEPLOYMENT.md#sửa-lỗi-trên-bản-vercel-hiện-tại). Code không tự tạo dịch vụ database. Dùng `scripts/setup_database.py` để tạo schema/cấp quyền và `scripts/check_database.py` hoặc `/api/health` để kiểm tra.
+## Cấu trúc project
 
-## Chạy local
+```text
+backend/       Nghiệp vụ, kết nối PostgreSQL, kiểm tra database
+migrations/    SQL có phiên bản, phải giữ cả 001 và 002
+public/        Giao diện và OCR; vendor/ sinh từ npm
+scripts/       Thiết lập, kiểm tra, migration và import dữ liệu
+tests/         Kiểm thử nghiệp vụ, migration, API và trình duyệt
+note/          Dữ liệu cũ, ảnh tham chiếu, ZIP, công cụ thử, backup — không lên GitHub/Vercel
+```
+
+`note/` giữ những file đã dọn, không phải thư mục runtime. Giữ `.venv/` và `node_modules/` ở root để các lệnh phát triển hoạt động; cả hai được Git bỏ qua. `.env.local` chứa secrets, cũng không được commit.
+
+## Database mới
+
+Một schema `fuel_app`, 7 bảng. Khóa chính nghiệp vụ là TEXT: xe `V1`, nhiên liệu `F1`, giá `P1`, lần đổ `R1`. Sequence riêng sinh số; không dùng MAX+1 hoặc tái sử dụng ID đã xóa.
+
+- `fuel_types`: danh mục có `code` ổn định và `name` hiển thị, hỗ trợ nhóm xăng/diesel/khác.
+- `vehicles`: loại xe, truyền động, hãng/dòng, đời xe, cc, dung tích bình, biển số tùy chọn, ngày mua, trạng thái và nhiên liệu mặc định.
+- `fuel_prices`: mọi loại nhiên liệu chung một bảng; nguồn là URL thực tế hoặc đúng chuỗi `manual`.
+- `refueling_logs`: dữ liệu trung tâm, snapshot giá/lít và loại nhiên liệu thực tế của lần đổ.
+- `app_metadata`, `app_locks`, `schema_migrations`: trạng thái, khóa sync và phiên bản schema.
+
+Chi tiết: [DATABASE.md](DATABASE.md). Baseline/quãng đường tính riêng mỗi xe từ lịch sử; không tính khoảng cách trước lần theo dõi đầu tiên. Log thiếu ODO không nội suy. Đổi loại nhiên liệu mặc định không thay đổi snapshot log cũ. Dung tích bình không đủ để suy ra mức tiêu hao hoặc nhiên liệu còn lại.
+
+## Local
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 npm.cmd ci
 npm.cmd run setup:ocr
-Copy-Item .env.example .env.local
-```
-
-Điền connection strings trong `.env.local`, tạo schema theo [DEPLOYMENT.md](DEPLOYMENT.md), rồi chạy:
-
-```powershell
+# Chỉ sao chép nếu chưa có .env.local; không ghi đè mật khẩu đã lưu.
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
+# Điền thông tin kết nối rồi chạy:
+.venv\Scripts\python.exe scripts/setup_database.py
 .venv\Scripts\python.exe server.py
 ```
 
-Mở http://127.0.0.1:8000. Thêm `--host 0.0.0.0` để dùng trên điện thoại cùng Wi-Fi. App cần PostgreSQL, không tự fallback về SQLite.
-
-## Nghiệp vụ
-
-- Nhiều xe; mặc định E10 RON 95-III, Đà Nẵng, vùng 1, bình 4 lít. Vùng giá có thể đổi theo cửa hàng.
-- Nhập tiền/ngày; tra giá có hiệu lực để tính lít bằng Decimal. Ngày đổi giá giữa ngày cần giờ đổ.
-- ODO tùy chọn, nhập tay hoặc OCR phía trình duyệt, người dùng xác nhận trước khi lưu; ảnh không gửi lên backend.
-- Fuel log đầu mỗi xe là baseline. Log thiếu ODO không nội suy; mốc có ODO tiếp theo so với mốc đã biết gần nhất. Không tính khoảng cách trước mốc theo dõi.
-- Đơn giá/số lít là snapshot. Sửa tiền/ODO giữ đơn giá; đổi ngày/giờ tra lại giá. Baseline và quãng đường tính lại từ lịch sử.
-- Không suy ra mức tiêu hao hoặc xăng còn lại từ dung tích bình. `is_full_tank` chỉ giữ dữ liệu cũ.
-
-## Sync giá
-
-Chỉ chạy khi bấm **Cập nhật từ Petrolimex**, gọi `POST /api/prices/sync`. Không có background thread, sync lúc startup hoặc Cron. Parser đối chiếu giá thanh bên với thông báo hiệu lực; lỗi nguồn giữ giá cũ. Giá thủ công ưu tiên khi trùng mốc.
-
-Do yêu cầu giữ nguyên UI, câu chữ cũ về tự đồng bộ lúc mở app/mỗi 6 giờ vẫn còn trong giao diện; câu đó không mô tả backend mới. Chưa sửa trong phase migration.
+Mở http://127.0.0.1:8000. Có thể thêm `--host 0.0.0.0` để truy cập từ điện thoại cùng mạng. Chỉ sync giá khi bấm cập nhật. Model OCR được pin qua npm, ảnh xử lý tại trình duyệt.
 
 ## Kiểm thử
 
-Tạo database PostgreSQL UTF-8 riêng có tên kết thúc `_test`. Điền `TEST_DATABASE_URL` trỏ database thử. Test xóa dữ liệu trong schema `fuel_app` của database đó; không dùng database thật.
+Chỉ dùng database PostgreSQL UTF-8 riêng có tên kết thúc `_test`; test sẽ xóa dữ liệu trong schema của database thử. Python đọc `TEST_DATABASE_URL` từ `.env.local` hoặc environment. Với npm, đặt biến này trong environment trước khi chạy.
 
 ```powershell
-# Python tự đọc TEST_DATABASE_URL từ .env.local hoặc biến môi trường.
 .venv\Scripts\python.exe -m unittest discover -s tests -v
-# Với Node, truyền TEST_DATABASE_URL qua biến môi trường trước khi chạy:
 npm.cmd run test:ui
 ```
 
-Test backend kiểm tra API, Decimal, baseline, giá theo giờ, migration, ghi đồng thời và khóa sync. Test UI dùng Microsoft Edge headless, OCR thật trên ảnh số tổng hợp, mobile/desktop, sửa/xóa/lưu và nhiều xe. Chưa xác minh OCR bằng ảnh đồng hồ thực tế.
+UI test dùng Microsoft Edge headless, OCR ảnh số tổng hợp, mobile/desktop, xe mở rộng, giá theo giờ và lịch sử. Screenshots vào `note/test-results/`. Không dùng database production cho test.
 
-Schema: `migrations/001_initial.sql`. Hướng dẫn tạo Supabase, import SQLite, deploy và danh sách file GitHub: [DEPLOYMENT.md](DEPLOYMENT.md).
+## Nâng cấp / triển khai
+
+**Code mới cần migration `002_fuel_catalog`. Không chạy code cũ với schema mới.** Xem [DEPLOYMENT.md](DEPLOYMENT.md) để chuyển đồng bộ code/database và giữ bản backup. Tác vụ refactor này được kiểm thử bằng PostgreSQL local; chưa tự deploy hoặc đổi schema Supabase đang phục vụ app cũ.

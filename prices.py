@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 VN = timezone(timedelta(hours=7))
 SOURCE = 'https://www.petrolimex.com.vn/'
 FUEL_TYPES = ['E10 RON 95-III', 'E10 RON 95-V', 'E5 RON 92-II', 'RON 95-III']
+FUEL_CODES = dict(zip(FUEL_TYPES, ('E10_RON95_III','E10_RON95_V','E5_RON92_II','RON95_III')))
 
 def download(url):
     request = Request(url, headers={'User-Agent': 'Mozilla/5.0 FuelLog/0.2', 'Accept': 'application/json,text/html', 'Referer': SOURCE})
@@ -48,7 +49,7 @@ def parse_sidebar(payload, announcements):
             value = int(raw)
             if value != float(raw) or not 1000 <= value <= 100000:
                 raise ValueError('Bảng giá trả về giá trị không hợp lệ.')
-            result.append(dict(fuel_type=fuel, price_zone=zone, effective_at=effective.isoformat(timespec='minutes'), unit_price_vnd=value, source='petrolimex', source_url=SOURCE, source_updated_at=item['LastModified']))
+            result.append(dict(fuel_type=fuel, fuel_code=FUEL_CODES[fuel], price_zone=zone, effective_at=effective.isoformat(timespec='minutes'), unit_price_vnd=value, source_url=sidebar_url(), source_updated_at=item['LastModified']))
     if not any(r['fuel_type'] == 'E10 RON 95-III' for r in result):
         raise ValueError('Không tìm thấy E10 RON 95-III trong bảng giá thanh bên.')
     return result

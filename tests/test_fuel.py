@@ -16,14 +16,14 @@ class FuelTests(unittest.TestCase):
         self.addCleanup(self.env.stop)
         reset()
         with server.connect() as db:
-            db.execute("INSERT INTO vehicles(name) VALUES('A'),('B')")
+            db.execute("INSERT INTO vehicles(name,tank_capacity_liters) VALUES('A',4),('B',4)")
             self.price(db, '2026-01-01T00:00', 20000)
 
-    def price(self, db, at, value, zone=1, fuel='E10 RON 95-III'):
-        server.put_price(db, dict(fuel_type=fuel, price_zone=zone, effective_at=at, unit_price_vnd=value, source='manual'))
+    def price(self, db, at, value, zone=1, fuel='F1'):
+        server.put_price(db, dict(fuel_type_id=fuel, price_zone=zone, effective_at=at, unit_price_vnd_per_liter=value, source_url='manual'))
 
-    def add(self, db, day, odo=None, vehicle=1, **extra):
-        data = dict(vehicle_id=vehicle, filled_on=day, odometer_km=odo, total_cost_vnd=50000, **extra)
+    def add(self, db, day, odo=None, vehicle='V1', **extra):
+        data = dict(vehicle_id=vehicle, refueled_on=day, odometer_km=odo, total_cost_vnd=50000, **extra)
         server.save_log(db, data)
         return data
 
@@ -31,19 +31,19 @@ class FuelTests(unittest.TestCase):
         with server.connect() as db:
             self.add(db,'2026-06-17',14898.4)
             self.add(db,'2026-06-12',14727)
-            self.add(db,'2026-06-15',500,vehicle=2)
+            self.add(db,'2026-06-15',500,vehicle='V2')
             logs=server.snapshot(db)['logs']
             self.assertIsNone(logs[0]['distance_km'])
             self.assertTrue(logs[0]['is_baseline'])
             self.assertEqual(logs[1]['distance_km'],171.4)
             self.assertIsNone(logs[2]['distance_km'])
-            db.execute('DELETE FROM fuel_logs WHERE id=%s',(logs[0]['id'],))
+            db.execute('DELETE FROM refueling_logs WHERE id=%s',(logs[0]['id'],))
             self.assertIsNone(server.snapshot(db)['logs'][0]['distance_km'])
 
     def test_sample_total_and_precision(self):
         with server.connect() as db:
             for day,odo,cost,price in server.SAMPLE:
-                server.save_log(db,dict(vehicle_id=1,filled_on=day,odometer_km=odo,total_cost_vnd=cost,unit_price_vnd_per_liter=price),imported=True)
+                server.save_log(db,dict(vehicle_id='V1',refueled_on=day,odometer_km=odo,total_cost_vnd=cost,unit_price_vnd_per_liter=price),imported=True)
             logs=server.snapshot(db)['logs']
             self.assertEqual(len(logs),14)
             self.assertAlmostEqual(sum(l['distance_km'] or 0 for l in logs),2327.5)
@@ -78,15 +78,15 @@ class FuelTests(unittest.TestCase):
         with server.connect() as db:
             self.price(db,'2026-06-12T15:00',25000)
             self.price(db,'2026-06-12T15:00',26000,zone=2)
-            self.price(db,'2026-06-12T15:00',27000,fuel='E10 RON 95-V')
-            self.assertTrue(server.quote(db,1,'2026-06-12')['needs_time'])
-            self.assertEqual(server.quote(db,1,'2026-06-12','14:59')['price']['unit_price_vnd'],20000)
-            self.assertEqual(server.quote(db,1,'2026-06-12','15:00')['price']['unit_price_vnd'],25000)
-            self.assertIsNone(server.quote(db,1,'2025-12-31')['price'])
-            self.assertEqual(server.quote(db,1,'2026-06-13')['price']['unit_price_vnd'],25000)
+            self.price(db,'2026-06-12T15:00',27000,fuel='F2')
+            self.assertTrue(server.quote(db,'V1','2026-06-12')['needs_time'])
+            self.assertEqual(server.quote(db,'V1','2026-06-12','14:59')['price']['unit_price_vnd_per_liter'],20000)
+            self.assertEqual(server.quote(db,'V1','2026-06-12','15:00')['price']['unit_price_vnd_per_liter'],25000)
+            self.assertIsNone(server.quote(db,'V1','2025-12-31')['price'])
+            self.assertEqual(server.quote(db,'V1','2026-06-13')['price']['unit_price_vnd_per_liter'],25000)
             with self.assertRaises(ValueError):self.add(db,'2026-06-12')
-            db.execute('UPDATE vehicles SET price_zone=2 WHERE id=2')
-            self.assertEqual(server.quote(db,2,'2026-06-13')['price']['unit_price_vnd'],26000)
+            db.execute("UPDATE vehicles SET price_zone=2 WHERE id='V2'")
+            self.assertEqual(server.quote(db,'V2','2026-06-13')['price']['unit_price_vnd_per_liter'],26000)
 
     def test_saved_price_does_not_change_after_sync_or_edit(self):
         with server.connect() as db:
@@ -97,14 +97,14 @@ class FuelTests(unittest.TestCase):
             saved=server.snapshot(db)['logs'][0]
             self.assertEqual(saved['unit_price_vnd_per_liter'],'20000.000000')
             self.assertEqual(saved['volume_liters'],'3.000000')
-            server.save_log(db,{**data,'filled_on':'2026-06-11'},row['id'])
+            server.save_log(db,{**data,'refueled_on':'2026-06-11'},row['id'])
             self.assertEqual(server.snapshot(db)['logs'][0]['unit_price_vnd_per_liter'],'30000.000000')
 
     def test_same_day_order_and_edit_revalidation(self):
         with server.connect() as db:
-            self.add(db,'2026-06-10',1000,filled_time='10:00')
-            data=self.add(db,'2026-06-10',1100,filled_time='15:00')
-            with self.assertRaises(ValueError):self.add(db,'2026-06-10',1200,filled_time='12:00')
+            self.add(db,'2026-06-10',1000,refueled_time='10:00')
+            data=self.add(db,'2026-06-10',1100,refueled_time='15:00')
+            with self.assertRaises(ValueError):self.add(db,'2026-06-10',1200,refueled_time='12:00')
             row=server.snapshot(db)['logs'][1]
             with self.assertRaises(ValueError):server.save_log(db,{**data,'odometer_km':900},row['id'])
 
@@ -127,10 +127,10 @@ class FuelTests(unittest.TestCase):
 
     def test_vehicle_defaults_and_update(self):
         with server.connect() as db:
-            v=server.vehicle_by_id(db,1)
+            v=server.vehicle_by_id(db,'V1')
             self.assertEqual(str(v['tank_capacity_liters']),'4.000')
             self.assertEqual(v['city'],'Đà Nẵng')
-            server.save_vehicle(db,dict(id=1,name='Xe tôi',fuel_type='E10 RON 95-III',price_zone=2))
-            self.assertEqual(server.vehicle_by_id(db,1)['price_zone'],2)
+            server.save_vehicle(db,dict(id='V1',name='Xe tôi',default_fuel_type_id='F1',price_zone=2))
+            self.assertEqual(server.vehicle_by_id(db,'V1')['price_zone'],2)
 
 if __name__ == '__main__':unittest.main()

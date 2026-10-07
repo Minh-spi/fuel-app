@@ -30,20 +30,20 @@ class MigrationApiTests(unittest.TestCase):
     def test_all_api_routes_and_json_contract(self):
         state = self.post('vehicles', {'name':'Xe Đà Nẵng'})
         self.assertEqual(state['vehicles'][0]['tank_capacity_liters'], '4')
-        self.post('prices', dict(fuel_type='E10 RON 95-III',price_zone=1,effective_at='2026-01-01T00:00',unit_price_vnd=25000))
-        quote = self.client.get('/api/quote?vehicle_id=1&filled_on=2026-06-01').get_json()
+        self.post('prices', dict(fuel_type_id='F1',price_zone=1,effective_at='2026-01-01T00:00',unit_price_vnd_per_liter=25000))
+        quote = self.client.get('/api/quote?vehicle_id=V1&refueled_on=2026-06-01').get_json()
         self.assertEqual(quote['price']['effective_at'], '2026-01-01T00:00+07:00')
-        state = self.post('logs', dict(vehicle_id=1,filled_on='2026-06-01',filled_time='10:30',total_cost_vnd=50000,odometer_km=1000))
+        state = self.post('logs', dict(vehicle_id='V1',refueled_on='2026-06-01',refueled_time='10:30',total_cost_vnd=50000,odometer_km=1000))
         log=state['logs'][0]
         self.assertEqual(log['volume_liters'],'2.000000')
-        self.assertEqual(log['filled_time'],'10:30')
+        self.assertEqual(log['refueled_time'],'10:30')
         self.assertIsNone(log['distance_km'])
         self.assertTrue(log['is_baseline'])
         self.assertEqual(self.client.get('/api/state').get_json(),state)
         self.assertEqual(self.post('logs/delete',{'id':log['id']})['logs'],[])
         self.assertEqual(len(self.post('sample',{})['logs']),14)
         self.assertEqual(self.client.post('/api/sample',json={}).status_code,400)
-        rows=[dict(fuel_type='E10 RON 95-III',price_zone=1,effective_at='2026-09-24T15:00+07:00',unit_price_vnd=27080,source='petrolimex')]
+        rows=[dict(fuel_type='E10 RON 95-III',price_zone=1,effective_at='2026-09-24T15:00+07:00',unit_price_vnd=27080,source_url='https://www.petrolimex.com.vn/')]
         with patch('backend.services.fetch_prices',return_value=rows):
             state=self.post('prices/sync',{})
         self.assertEqual(state['sync']['price_sync_error'],'')
@@ -62,13 +62,13 @@ class MigrationApiTests(unittest.TestCase):
     def test_health_readonly_and_missing_schema(self):
         self.assertEqual(self.client.get('/api/health').get_json(), {'ok':True,'database':'ready'})
         with connect() as db:
-            db.execute('ALTER TABLE fuel_app.metadata RENAME TO metadata_health_test')
+            db.execute('ALTER TABLE fuel_app.app_metadata RENAME TO app_metadata_health_test')
         try:
             response=self.client.get('/api/health')
             self.assertEqual(response.status_code,503)
             self.assertEqual(response.get_json()['code'],'database_schema')
         finally:
-            with connect() as db:db.execute('ALTER TABLE fuel_app.metadata_health_test RENAME TO metadata')
+            with connect() as db:db.execute('ALTER TABLE fuel_app.app_metadata_health_test RENAME TO app_metadata')
 
     def test_import_dry_run_exact_contract_and_sequence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -86,14 +86,14 @@ class MigrationApiTests(unittest.TestCase):
             self.assertEqual(self.client.get('/api/state').get_json()['vehicles'],[])
             self.assertTrue(import_sqlite(path,test_url(),apply=True)['verified_all_fields'])
             actual=self.client.get('/api/state').get_json()
-            # Price fetch timestamps are equivalent ISO instants; old formatter omitted zero microseconds.
-            for state in (actual,expected):
-                for price in state['prices']:
-                    from datetime import datetime
-                    price['fetched_at']=datetime.fromisoformat(price['fetched_at'])
-            self.assertEqual(actual,expected)
+            for old,new in zip(expected['logs'],actual['logs']):
+                self.assertEqual(new['id'],'R'+str(old['id']))
+                self.assertEqual(new['vehicle_id'],'V'+str(old['vehicle_id']))
+                for key in ('odometer_tenths','total_cost_vnd','unit_price_vnd_per_liter','volume_liters','is_baseline','distance_km','notes','created_at','updated_at'):
+                    self.assertEqual(new[key],old[key])
+            self.assertEqual(actual['prices'][0]['source_url'],'manual')
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),before)
-            self.assertEqual(self.post('vehicles',{'name':'Next'})['vehicles'][-1]['id'],2)
+            self.assertEqual(self.post('vehicles',{'name':'Next'})['vehicles'][-1]['id'],'V2')
             with self.assertRaises(ValueError):import_sqlite(path,test_url(),apply=True)
 
     def test_concurrent_duplicate_odo_is_rejected(self):
@@ -103,7 +103,7 @@ class MigrationApiTests(unittest.TestCase):
             barrier.wait()
             try:
                 with connect() as db:
-                    services.save_log(db,dict(vehicle_id=1,filled_on='2026-06-01',odometer_km=1000,total_cost_vnd=50000,unit_price_vnd_per_liter=25000),imported=True)
+                    services.save_log(db,dict(vehicle_id='V1',refueled_on='2026-06-01',odometer_km=1000,total_cost_vnd=50000,unit_price_vnd_per_liter=25000),imported=True)
                 return True
             except ValueError:return False
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -122,12 +122,12 @@ class MigrationApiTests(unittest.TestCase):
             finally:db.close()
             import_sqlite(path,test_url(),apply=True)
             log=self.client.get('/api/state').get_json()['logs'][0]
-            self.assertEqual(log['id'],42)
+            self.assertEqual(log['id'],'R42')
             self.assertEqual(log['volume_liters'],'2.266546')
-            self.assertEqual(log['price_source'],'legacy')
+            self.assertIsNone(log['fuel_price_id'])
             self.assertTrue(log['is_baseline'])
             self.assertIsNone(log['distance_km'])
-            self.assertEqual(self.post('vehicles',{'name':'Next'})['vehicles'][-1]['id'],8)
+            self.assertEqual(self.post('vehicles',{'name':'Next'})['vehicles'][-1]['id'],'V8')
 
     def test_sync_lease_and_stale_token(self):
         first=services.acquire_sync_lock()

@@ -13,3 +13,4 @@ test-results/
 *.zip
 *.sqlite3
 .tools/
+note/

@@ -19,8 +19,9 @@ def provision():
                 raise ValueError('Set RUNTIME_DB_PASSWORD to create fuel_runtime.')
             db.execute(sql.SQL('CREATE ROLE fuel_runtime LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT').format(sql.Literal(password)))
         db.execute('GRANT USAGE ON SCHEMA fuel_app TO fuel_runtime')
-        for table in ('vehicles', 'fuel_prices', 'fuel_logs', 'metadata', 'app_locks'):
+        for table in ('vehicles', 'fuel_prices', 'refueling_logs', 'app_metadata', 'app_locks'):
             db.execute(sql.SQL('GRANT SELECT, INSERT, UPDATE, DELETE ON fuel_app.{} TO fuel_runtime').format(sql.Identifier(table)))
+        db.execute('GRANT SELECT ON fuel_app.fuel_types TO fuel_runtime')
         db.execute('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA fuel_app TO fuel_runtime')
 
 if __name__ == '__main__':
