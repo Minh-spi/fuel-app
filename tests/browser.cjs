@@ -55,6 +55,10 @@ async function main(){
     const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=900;c.height=220;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,900,220);x.fillStyle='black';x.font='bold 100px Arial';x.fillText('17054.5',65,145);return c.toDataURL().split(',')[1];});
     await page.locator('#photo-file').setInputFiles({name:'odo.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
     await expect(page.locator('#crop-area')).toBeVisible();
+    const beforeRotate=await page.locator('#crop-canvas').evaluate(c=>[c.width,c.height]);
+    await page.locator('#rotate-photo').click();
+    await expect(page.locator('#crop-canvas')).toHaveJSProperty('width',beforeRotate[1]);
+    await page.locator('#rotate-photo').click();
     await page.locator('#read-odo').click();
     await expect(page.locator('#ocr-result')).toBeVisible({timeout:60000});
     await expect(page.locator('#ocr-number')).toHaveValue('17054.5');

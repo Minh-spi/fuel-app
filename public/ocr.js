@@ -19,14 +19,16 @@
   $('#camera-open').onclick=()=>{status.textContent='';dialog.showModal();};
   $('#take-photo').onclick=()=>$('#camera-file').click();
   $('#choose-photo').onclick=()=>$('#photo-file').click();
-  function controls(disabled){busy=disabled;$('#read-odo').disabled=disabled;$('#take-photo').disabled=disabled;$('#choose-photo').disabled=disabled;$('#reset-crop').disabled=disabled;}
+  function controls(disabled){busy=disabled;$('#read-odo').disabled=disabled;$('#take-photo').disabled=disabled;$('#choose-photo').disabled=disabled;$('#rotate-photo').disabled=disabled;$('#reset-crop').disabled=disabled;}
+  function displayPhoto(image){photo=image;const scale=Math.min(1,1000/image.width,1000/image.height);canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);selection=null;draw();$('#crop-area').hidden=false;$('#ocr-result').hidden=true;status.textContent='Ảnh đã sẵn sàng. Khoanh sát cả dãy số ODO, gồm bánh số nhỏ cuối nếu có; tránh số trên đồng hồ tốc độ.';}
   async function loadPhoto(event) {
     const file=event.target.files[0];event.target.value='';if(!file)return;
     if(file.size>20*1024*1024){status.textContent='Ảnh quá lớn. Hãy chọn ảnh nhỏ hơn 20 MB.';return;}
     const generation=++epoch;const url=URL.createObjectURL(file);
-    try{const img=new Image();img.src=url;await img.decode();if(generation!==epoch)return;photo=img;const scale=Math.min(1,1000/img.width,1000/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);selection=null;draw();$('#crop-area').hidden=false;$('#ocr-result').hidden=true;status.textContent='Ảnh đã sẵn sàng. Khoanh dãy số ODO rồi bấm Đọc số ODO.';}catch{status.textContent='Không mở được ảnh. Hãy thử ảnh JPEG hoặc PNG.';}finally{URL.revokeObjectURL(url);}
+    try{const img=new Image();img.src=url;await img.decode();if(generation!==epoch)return;displayPhoto(img);}catch{status.textContent='Không mở được ảnh. Hãy thử ảnh JPEG hoặc PNG.';}finally{URL.revokeObjectURL(url);}
   }
   $('#camera-file').onchange=loadPhoto;$('#photo-file').onchange=loadPhoto;
+  $('#rotate-photo').onclick=()=>{if(!photo||busy)return;const rotated=document.createElement('canvas');rotated.width=photo.height;rotated.height=photo.width;const rctx=rotated.getContext('2d');rctx.translate(rotated.width/2,rotated.height/2);rctx.rotate(Math.PI/2);rctx.drawImage(photo,-photo.width/2,-photo.height/2);displayPhoto(rotated);};
   function point(e){const r=canvas.getBoundingClientRect();return{x:Math.max(0,Math.min(canvas.width,(e.clientX-r.left)*canvas.width/r.width)),y:Math.max(0,Math.min(canvas.height,(e.clientY-r.top)*canvas.height/r.height))};}
   canvas.onpointerdown=e=>{if(!photo||busy)return;start=point(e);canvas.setPointerCapture(e.pointerId);};
   canvas.onpointermove=e=>{if(!start||busy)return;const p=point(e);selection={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)};draw();};
@@ -39,12 +41,13 @@
       if(/^\d{1,3}(?:[.,]\d{3})+(?:[.,]\d)?$/.test(raw)){const last=raw.match(/[.,](\d)$/);value=last?Number(raw.slice(0,-2).replace(/[.,]/g,'')+'.'+last[1]):Number(raw.replace(/[.,]/g,''));}
       else if(/^\d+(?:[.,]\d)?$/.test(raw))value=Number(raw.replace(',','.'));
       if(Number.isFinite(value)&&value>=0&&value<=9999999&&!found.includes(value))found.push(value);
+      if(/^\d{6}$/.test(raw)){const tenths=Number(raw.slice(0,-1)+'.'+raw.slice(-1));if(tenths<=9999999&&!found.includes(tenths))found.push(tenths);}
     }
     return found.sort((a,b)=>String(b).length-String(a).length).slice(0,6);
   }
   async function loadLibrary(){
     if(window.Tesseract)return;
-    await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error('Chưa có bộ OCR. Chạy npm run setup:ocr trên máy chủ rồi thử lại.'));};document.head.append(script);});
+    await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='/vendor/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error('Thiếu tài sản OCR trên deployment. Hãy thêm thư mục public/vendor vào GitHub rồi triển khai lại.'));};document.head.append(script);});
   }
   $('#read-odo').onclick=async()=>{
     if(!photo||busy)return;const generation=++epoch;controls(true);$('#ocr-result').hidden=true;status.textContent='Đang khởi động bộ đọc ảnh…';let timeout, ownWorker;

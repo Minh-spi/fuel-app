@@ -2,7 +2,6 @@ data/
 __pycache__/
 *.pyc
 node_modules/
-public/vendor/
 reference/*.html
 reference/*.js
 test-results/
@@ -12,5 +11,7 @@ test-results/
 !.env.example
 *.zip
 *.sqlite3
+*.jpg
+*.JPG
 .tools/
 note/
