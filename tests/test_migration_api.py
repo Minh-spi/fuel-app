@@ -59,6 +59,21 @@ class MigrationApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/not-found').status_code,404)
         self.assertEqual(self.client.get('/api/state').get_json()['vehicles'],[])
 
+    def test_refueling_can_use_a_fuel_other_than_vehicle_default(self):
+        self.post('vehicles', {'name':'Xe mặc định E10 III', 'default_fuel_type_id':'F1'})
+        self.post('prices', dict(fuel_type_id='F1',price_zone=1,effective_at='2026-01-01T00:00',unit_price_vnd_per_liter=25000))
+        self.post('prices', dict(fuel_type_id='F2',price_zone=1,effective_at='2026-01-01T00:00',unit_price_vnd_per_liter=20000))
+        quote = self.client.get('/api/quote?vehicle_id=V1&refueled_on=2026-06-01&fuel_type_id=F2').get_json()
+        self.assertEqual(quote['fuel_type_id'], 'F2')
+        self.assertEqual(quote['price']['unit_price_vnd_per_liter'], 20000)
+        state = self.post('logs', dict(vehicle_id='V1',fuel_type_id='F2',refueled_on='2026-06-01',refueled_time='10:30',total_cost_vnd=50000))
+        log = state['logs'][0]
+        self.assertEqual(log['fuel_type_id'], 'F2')
+        self.assertEqual(log['volume_liters'], '2.500000')
+        state = self.post('logs', dict(id=log['id'],vehicle_id='V1',fuel_type_id='F1',refueled_on='2026-06-01',refueled_time='10:30',total_cost_vnd=50000))
+        self.assertEqual(state['logs'][0]['fuel_type_id'], 'F1')
+        self.assertEqual(state['logs'][0]['volume_liters'], '2.000000')
+
     def test_health_readonly_and_missing_schema(self):
         self.assertEqual(self.client.get('/api/health').get_json(), {'ok':True,'database':'ready'})
         with connect() as db:

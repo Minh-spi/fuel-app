@@ -36,8 +36,8 @@ function render() {
   $('#period').textContent=logs.length?day(logs[0].refueled_on)+' – '+day(logs.at(-1).refueled_on):'Chưa có dữ liệu';
   $('#empty').hidden=!!logs.length;
   $('#vehicle-note').textContent=`Dung tích bình ${v?.tank_capacity_liters||4} lít. Số lít đổ thêm không phải lượng xăng còn trong bình.`;
-  $('#rows').innerHTML=[...logs].reverse().map(l=>`<tr><td>${day(l.refueled_on)}${l.refueled_time?`<small class="cell-sub">${l.refueled_time}</small>`:''}${l.notes?`<small class="cell-sub">${escapeHTML(l.notes)}</small>`:''}</td><td>${l.odometer_km===null?'—':nf(l.odometer_km)}</td><td>${money(l.total_cost_vnd)}</td><td>${nf(l.unit_price_vnd_per_liter,0)}</td><td>${nf(l.volume_liters,2)}</td><td>${distanceLabel(l)}</td><td>${actionButtons(l)}</td></tr>`).join('');
-  $('#cards').innerHTML=[...logs].reverse().map(l=>`<article class="log-card"><div class="card-top"><span>${day(l.refueled_on)} <small>${l.refueled_time||''}</small></span><strong>${money(l.total_cost_vnd)}</strong></div><div class="card-metrics"><div><small>Đổ thêm</small><b>${nf(l.volume_liters,2)} lít</b></div><div><small>ODO</small><b>${l.odometer_km===null?'—':nf(l.odometer_km)} km</b></div><div><small>Quãng đường</small><b>${distanceLabel(l)}</b></div></div>${l.notes?`<p>${escapeHTML(l.notes)}</p>`:''}<div class="card-bottom"><small>${money(l.unit_price_vnd_per_liter)}/lít</small><div>${actionButtons(l)}</div></div></article>`).join('');
+  $('#rows').innerHTML=[...logs].reverse().map(l=>`<tr><td>${day(l.refueled_on)}${l.refueled_time?`<small class="cell-sub">${l.refueled_time}</small>`:''}<small class="cell-sub">${escapeHTML(fuelName(l.fuel_type_id))}</small>${l.notes?`<small class="cell-sub">${escapeHTML(l.notes)}</small>`:''}</td><td>${l.odometer_km===null?'—':nf(l.odometer_km)}</td><td>${money(l.total_cost_vnd)}</td><td>${nf(l.unit_price_vnd_per_liter,0)}</td><td>${nf(l.volume_liters,2)}</td><td>${distanceLabel(l)}</td><td>${actionButtons(l)}</td></tr>`).join('');
+  $('#cards').innerHTML=[...logs].reverse().map(l=>`<article class="log-card"><div class="card-top"><span>${day(l.refueled_on)} <small>${l.refueled_time||''}</small></span><strong>${money(l.total_cost_vnd)}</strong></div><div class="card-metrics"><div><small>Đổ thêm</small><b>${nf(l.volume_liters,2)} lít</b></div><div><small>ODO</small><b>${l.odometer_km===null?'—':nf(l.odometer_km)} km</b></div><div><small>Quãng đường</small><b>${distanceLabel(l)}</b></div></div>${l.notes?`<p>${escapeHTML(l.notes)}</p>`:''}<div class="card-bottom"><small>${escapeHTML(fuelName(l.fuel_type_id))} / ${money(l.unit_price_vnd_per_liter)}/lít</small><div>${actionButtons(l)}</div></div></article>`).join('');
   renderPrices();
 }
 function populateFuels(){document.querySelectorAll('.fuel-options').forEach(s=>{const old=s.value;s.innerHTML=state.fuel_types.map(f=>`<option value="${f.id}">${escapeHTML(f.name)}</option>`).join('');if(state.fuel_types.some(f=>f.id===old))s.value=old;});}
@@ -47,19 +47,19 @@ $('#add-vehicle').onclick=()=>openVehicle();$('#edit-vehicle').onclick=()=>openV
 document.querySelectorAll('.close').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 function openLog(log) {
   if(!selected)return openVehicle();editing=log||null;
-  const f=$('#log-form');f.reset();f.elements.id.value='';f.elements.odo_source.value='manual';
+  const f=$('#log-form');populateFuels();f.reset();f.elements.id.value='';f.elements.odo_source.value='manual';
   const now=localNow();f.elements.refueled_on.value=now.day;f.elements.refueled_time.value=now.time;
-  if(log)for(const[k,v]of Object.entries(log))if(f.elements.namedItem(k))f.elements.namedItem(k).value=v??'';
+  if(log){for(const[k,v]of Object.entries(log))if(f.elements.namedItem(k))f.elements.namedItem(k).value=v??'';}else f.elements.fuel_type_id.value=activeVehicle().default_fuel_type_id;
   $('#form-title').textContent=log?'Sửa lần đổ':'Thêm lần đổ';$('#log-vehicle').textContent=activeVehicle().name;
   $('#log-form .form-error').textContent='';$('#log-dialog').showModal();updateQuote();updateDistance();
 }
 $('#add-log').onclick=()=>openLog();
-function preservedQuote(){const f=$('#log-form').elements;return editing&&editing.vehicle_id===selected&&editing.refueled_on===f.refueled_on.value&&(editing.refueled_time||'')===f.refueled_time.value;}
+function preservedQuote(){const f=$('#log-form').elements;return editing&&editing.vehicle_id===selected&&editing.refueled_on===f.refueled_on.value&&(editing.refueled_time||'')===f.refueled_time.value&&editing.fuel_type_id===f.fuel_type_id.value;}
 async function updateQuote(){
   const generation=++quoteGeneration,f=$('#log-form').elements;activeQuote=null;$('#quote-status').textContent='Đang tra giá…';updateLiters();
   if(preservedQuote()){activeQuote={price:{unit_price_vnd_per_liter:Number(editing.unit_price_vnd_per_liter)},needs_time:false,message:'Đơn giá đã lưu của lần đổ này.'};updateLiters();return;}
   if(!f.refueled_on.value)return;
-  try{const q=await request('quote?'+new URLSearchParams({vehicle_id:selected,refueled_on:f.refueled_on.value,refueled_time:f.refueled_time.value}));if(generation!==quoteGeneration)return;activeQuote=q;updateLiters();}catch(e){if(generation===quoteGeneration){$('#quote-status').textContent=e.message;$('#save-log').disabled=true;}}
+  try{const q=await request('quote?'+new URLSearchParams({vehicle_id:selected,refueled_on:f.refueled_on.value,refueled_time:f.refueled_time.value,fuel_type_id:f.fuel_type_id.value}));if(generation!==quoteGeneration)return;activeQuote=q;updateLiters();}catch(e){if(generation===quoteGeneration){$('#quote-status').textContent=e.message;$('#save-log').disabled=true;}}
 }
 function updateLiters(){
   const amount=Number($('#log-form').elements.total_cost_vnd.value),p=activeQuote?.price;
@@ -76,6 +76,7 @@ function updateDistance(){
   $('#distance-preview').textContent=earlier.length?`${nf(odo-earlier.at(-1).odometer_km)} km từ mốc ODO ngày ${day(earlier.at(-1).refueled_on)}.`:'Mốc ODO đầu tiên — không tính quãng đường trước đó.';
 }
 $('#log-form').oninput=e=>{if(e.target.name==='refueled_on'){e.target.form.elements.refueled_time.value='';updateQuote();}if(e.target.name==='refueled_time')updateQuote();if(e.target.name==='odometer_km')e.target.form.elements.odo_source.value='manual';updateLiters();updateDistance();};
+$('#log-form').onchange=e=>{if(e.target.name==='fuel_type_id')updateQuote();};
 document.querySelectorAll('[data-amount]').forEach(b=>b.onclick=()=>{$('#log-form').elements.total_cost_vnd.value=b.dataset.amount;updateLiters();});
 async function submitForm(event,endpoint,extra,dialog){
   event.preventDefault();const form=event.target,button=form.querySelector('[type=submit]');button.disabled=true;saving=true;
@@ -88,11 +89,10 @@ $('#price-form').onsubmit=e=>submitForm(e,'prices',{},null);
 async function logAction(e){const edit=e.target.closest('[data-edit]'),del=e.target.closest('[data-delete]');if(edit)openLog(state.logs.find(l=>l.id===edit.dataset.edit));if(del&&confirm('Xóa lần đổ này? Mốc bắt đầu và quãng đường sẽ được tính lại.')){try{await api('logs/delete',{id:del.dataset.delete});render();$('#notice').textContent='Đã xóa lần đổ.';}catch(e){$('#notice').textContent=e.message;}}}
 $('#rows').onclick=logAction;$('#cards').onclick=logAction;
 $('#sample').onclick=async()=>{$('#sample').disabled=true;try{await api('sample',{});selected=state.vehicles.at(-1).id;render();$('#notice').textContent='Đã thêm 14 lần đổ từ ảnh. Giá mẫu chỉ thuộc các lần đổ này.';}catch(e){$('#notice').textContent=e.message;}finally{$('#sample').disabled=false;}};
-function renderPrices(){const v=activeVehicle();const rows=state.prices.filter(p=>p.fuel_type_id===(v?.default_fuel_type_id||'F1')&&p.price_zone===(v?.price_zone||1));$('#price-list').innerHTML=rows.length?rows.map(p=>`<div class="price-item"><div><b>${money(p.unit_price_vnd_per_liter)}/lít</b><small>${escapeHTML(fuelName(p.fuel_type_id))} · Vùng ${p.price_zone}</small></div><div><span>${day(p.effective_at.slice(0,10))} · ${p.effective_at.slice(11,16)}</span><small>${escapeHTML(priceSource(p.source_url))}</small></div></div>`).join(''):'<p>Chưa có giá đã lưu cho loại xăng và vùng này.</p>';}
-function openPrices(){populateFuels();const f=$('#price-form'),v=activeVehicle(),now=localNow();f.elements.fuel_type_id.value=v?.default_fuel_type_id||'F1';f.elements.price_zone.value=v?.price_zone||1;f.elements.effective_at.value=($('#log-dialog').open?$('#log-form').elements.refueled_on.value:now.day)+'T00:00';$('#prices-status').textContent=state.sync.price_sync_error||'';renderPrices();$('#prices-dialog').showModal();if($('#log-dialog').open&&!activeQuote?.price)$('#manual-price').open=true;}
+function renderPrices(){const v=activeVehicle();const fuelId=(($('#log-dialog').open?$('#log-form').elements.fuel_type_id.value:v?.default_fuel_type_id)||'F1');const rows=state.prices.filter(p=>p.fuel_type_id===fuelId&&p.price_zone===(v?.price_zone||1));$('#price-list').innerHTML=rows.length?rows.map(p=>`<div class="price-item"><div><b>${money(p.unit_price_vnd_per_liter)}/lít</b><small>${escapeHTML(fuelName(p.fuel_type_id))} · Vùng ${p.price_zone}</small></div><div><span>${day(p.effective_at.slice(0,10))} · ${p.effective_at.slice(11,16)}</span><small>${escapeHTML(priceSource(p.source_url))}</small></div></div>`).join(''):'<p>Chưa có giá đã lưu cho loại xăng và vùng này.</p>';}
+function openPrices(){populateFuels();const f=$('#price-form'),v=activeVehicle(),now=localNow();f.elements.fuel_type_id.value=($('#log-dialog').open?$('#log-form').elements.fuel_type_id.value:v?.default_fuel_type_id)||'F1';f.elements.price_zone.value=v?.price_zone||1;f.elements.effective_at.value=($('#log-dialog').open?$('#log-form').elements.refueled_on.value:now.day)+'T00:00';$('#prices-status').textContent=state.sync.price_sync_error||'';renderPrices();$('#prices-dialog').showModal();if($('#log-dialog').open&&!activeQuote?.price)$('#manual-price').open=true;}
 $('#prices-open').onclick=openPrices;$('#log-prices').onclick=openPrices;
 $('#sync-prices').onclick=async()=>{const b=$('#sync-prices');b.disabled=true;$('#prices-status').textContent='Đang đọc bảng giá Petrolimex…';try{await api('prices/sync',{});render();$('#prices-status').textContent='Đã cập nhật giá từ bảng thanh bên Petrolimex.';if($('#log-dialog').open)await updateQuote();}catch(e){$('#prices-status').textContent=e.message;}finally{b.disabled=false;}};
 $('#export').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.href=url;a.download='fuel-data.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 api('state').then(()=>{populateFuels();render();}).catch(e=>{$('#notice').textContent='Không thể tải dữ liệu: '+e.message;});
-// Refresh background sync status without interrupting an open form.
-setInterval(async()=>{if(document.querySelector('dialog[open]'))return;try{await api('state');render();}catch{}},30000);
+setInterval(async()=>{if(document.hidden||document.querySelector('dialog[open]'))return;try{await api('state');render();}catch{}},30000);

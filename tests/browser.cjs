@@ -34,11 +34,17 @@ async function main(){
     await page.locator('#price-form [name=effective_at]').fill('2026-01-01T00:00');
     await page.locator('#price-form [type=submit]').click();
     await expect(page.locator('#prices-status')).toContainText('Đã lưu giá');
+    await page.locator('#price-form [name=fuel_type_id]').selectOption('F2');
+    await page.locator('#price-form [name=unit_price_vnd_per_liter]').fill('20000');
+    await page.locator('#price-form [type=submit]').click();
+    await expect(page.locator('#prices-status')).toContainText('Đã lưu giá');
     await page.locator('#prices-dialog .close').click();
     await page.locator('#add-log').click();
+    await expect(page.locator('#log-form [name=fuel_type_id]')).toHaveValue('F1');
+    await page.locator('#log-form [name=fuel_type_id]').selectOption('F2');
     await page.locator('[data-amount="50000"]').click();
     await page.locator('#log-form [name=refueled_on]').fill('2026-08-01');
-    await expect(page.locator('#liters-preview')).toHaveText('2 lít');
+    await expect(page.locator('#liters-preview')).toHaveText('2,5 lít');
     await page.locator('#save-log').click();
     await expect(page.locator('#log-dialog')).not.toBeVisible();
     await expect(page.locator('#count')).toHaveText('1');
@@ -88,7 +94,7 @@ async function main(){
     await page.reload();await expect(page.locator('#count')).toHaveText('2');
     const data=await (await fetch(base+'/api/state')).json();
     if(data.vehicles[0].id!=='V1'||data.vehicles[0].brand!=='Honda'||data.vehicles[0].tank_capacity_liters!=='4.9')throw new Error('Vehicle details not saved');
-    if(!data.logs[0].id.startsWith('R')||data.logs[0].fuel_type_id!=='F1')throw new Error('New ID/catalog contract not saved');
+    if(!data.logs[0].id.startsWith('R')||data.logs[0].fuel_type_id!=='F2')throw new Error('Per-refuel fuel type not saved');
     if(data.logs[0].odo_source!=='photo_confirmed')throw new Error('OCR provenance not saved');
     await page.setViewportSize({width:1440,height:1000});
     await expect(page.locator('.table-wrap')).toBeVisible();

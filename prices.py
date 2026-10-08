@@ -3,20 +3,42 @@ import base64
 import json
 import re
 import os
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 VN = timezone(timedelta(hours=7))
 SOURCE = 'https://www.petrolimex.com.vn/'
 FUEL_TYPES = ['E10 RON 95-III', 'E10 RON 95-V', 'E5 RON 92-II', 'RON 95-III']
 FUEL_CODES = dict(zip(FUEL_TYPES, ('E10_RON95_III','E10_RON95_V','E5_RON92_II','RON95_III')))
 
+ALIASES = {'e10-ron-95-iii':'E10 RON 95-III','e10-ron-95-v':'E10 RON 95-V',
+           'e5-ron-92-ii':'E5 RON 92-II','ron-95-iii':'RON 95-III'}
+
+def canonical_title(value):
+    if not isinstance(value,str):return None
+    value=unicodedata.normalize('NFC',value)
+    value=re.sub(r'\s+',' ',value).strip()
+    value=re.sub(r'^Xăng\s+','',value,flags=re.I)
+    value=re.sub(r'\s+Mức\s+([235])$',lambda m:'-'+{'2':'II','3':'III','5':'V'}[m[1]],value,flags=re.I)
+    return next((fuel for fuel in FUEL_TYPES if fuel.casefold()==value.casefold()),None)
+
+def resolve_fuel(item):
+    candidates={v for v in (canonical_title(item.get('Title')),canonical_title(item.get('EnglishTitle')),
+        ALIASES.get(str(item.get('Alias','')).strip().lower())) if v}
+    if len(candidates)>1:raise ValueError('Các trường nhận diện nhiên liệu của nguồn không khớp.')
+    return next(iter(candidates),None)
+
+
 def download(url):
     request = Request(url, headers={'User-Agent': 'Mozilla/5.0 FuelLog/0.2', 'Accept': 'application/json,text/html', 'Referer': SOURCE})
     timeout = max(1, min(20, int(os.environ.get('PRICE_FETCH_TIMEOUT_SECONDS', '15'))))
     with urlopen(request, timeout=timeout) as response:
-        return response.read(2_000_000).decode('utf-8')
+        body=response.read(2_000_001)
+        if len(body)>2_000_000:raise ValueError('Phản hồi nguồn giá vượt giới hạn dung lượng.')
+        return body.decode('utf-8')
 
 def sidebar_url():
     filters = {'SystemID': '6783dc1271ff449e95b74a9520964169', 'RepositoryID': 'a95451e23b474fe5886bfb7cf843f53c', 'RepositoryEntityID': '3801378fe1e045b1afa10de7c5776124', 'Status': 'Published'}
@@ -34,11 +56,13 @@ def parse_sidebar(payload, announcements):
         raise ValueError('Không đọc được thời điểm áp dụng từ thông báo Petrolimex.')
     effective = max(times)
     result = []
+    seen=set()
     for item in payload.get('Objects', []):
-        title = re.sub(r'\s+', ' ', item.get('Title', '')).strip()
-        fuel = re.sub(r'^Xăng\s+', '', title, flags=re.I)
-        if fuel not in FUEL_TYPES:
+        fuel = resolve_fuel(item)
+        if fuel is None:
             continue
+        if fuel in seen:raise ValueError('Nguồn trả nhiều bản ghi cho cùng loại nhiên liệu.')
+        seen.add(fuel)
         modified = datetime.fromisoformat(item['LastModified'].replace('Z', '+00:00'))
         if modified.tzinfo:
             modified = modified.astimezone(VN)
@@ -54,10 +78,20 @@ def parse_sidebar(payload, announcements):
         raise ValueError('Không tìm thấy E10 RON 95-III trong bảng giá thanh bên.')
     return result
 
+class PriceSourceError(ValueError):
+    """An actionable, credential-free message safe to display in the application."""
+
 def fetch_prices():
-    payload = json.loads(download(sidebar_url()))
-    announcements = download(SOURCE + 'ndi/thong-cao-bao-chi.html')
-    return parse_sidebar(payload, announcements)
+    try:
+        payload = json.loads(download(sidebar_url()))
+        announcements = download(SOURCE + 'ndi/thong-cao-bao-chi.html')
+        return parse_sidebar(payload, announcements)
+    except HTTPError as error:
+        raise PriceSourceError(f'Petrolimex trả HTTP {error.code}. Vui lòng thử lại sau.') from error
+    except (TimeoutError, URLError) as error:
+        raise PriceSourceError('Không tải được nguồn Petrolimex: kết nối lỗi hoặc quá thời gian chờ.') from error
+    except (ValueError, KeyError, TypeError, AttributeError, OverflowError) as error:
+        raise PriceSourceError('Dữ liệu Petrolimex chưa xác thực được: kiểm tra loại nhiên liệu, đơn giá và ngày hiệu lực. Chạy note/test_petrolimex.py để xem chi tiết.') from error
 
 if __name__ == '__main__':
     print(json.dumps(fetch_prices(), ensure_ascii=True, indent=2))

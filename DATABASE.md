@@ -20,7 +20,7 @@ Danh mục ban đầu giữ 4 sản phẩm app đang hỗ trợ. Có thể thêm
 
 `source_url` bắt buộc là `manual` hoặc HTTP(S) URL. Không có source/is_manual. Crawler lưu URL endpoint cung cấp bảng giá; thời điểm hiệu lực vẫn đối chiếu thông báo. Bản ghi giá duy nhất theo `(fuel_type_id, price_zone, effective_at, source_url)`. Tra giá mới nhất trước lúc đổ, ưu tiên manual nếu trùng mốc, rồi updated_at và số ID. Index chính `(fuel_type_id,price_zone,effective_at DESC)`.
 
-Log giữ đơn giá và lít NUMERIC(20,6); tiền nguyên đồng BIGINT, ODO nguyên theo 0,1 km. FK fuel_price_id có thể NULL cho lịch sử/sample; không dựng giá thị trường giả. Sửa tiền/ODO/ghi chú giữ giá và nhiên liệu đã lưu, đổi ngày/giờ/xe tra lại theo mặc định xe. Không suy ra xăng còn lại hoặc mức tiêu hao từ dung tích bình. Log đầu là baseline; ODO đầu tiên được biết cũng chưa có khoảng cách nếu trước đó thiếu ODO.
+Mỗi xe có `default_fuel_type_id`; form lần đổ mặc định theo xe nhưng cho chọn loại xăng riêng từng lần. `refueling_logs.fuel_type_id` lưu loại thực đổ, dùng loại đó để tra giá/tính lít và hiển thị trong lịch sử. Đổi loại xăng khi sửa log sẽ tra lại giá; sửa tiền/ODO/ghi chú trong khi giữ nguyên ngày, giờ và loại xăng sẽ giữ đơn giá đã chốt. Đổi ngày/giờ sẽ tra lại giá theo loại xăng đang chọn. Log giữ đơn giá và lít NUMERIC(20,6); tiền nguyên đồng BIGINT, ODO nguyên theo 0,1 km. FK fuel_price_id có thể NULL cho lịch sử/sample; không dựng giá thị trường giả. Không suy ra xăng còn lại hoặc mức tiêu hao từ dung tích bình. Log đầu là baseline; ODO đầu tiên được biết cũng chưa có khoảng cách nếu trước đó thiếu ODO.
 
 ## API v2
 

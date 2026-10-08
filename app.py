@@ -54,7 +54,7 @@ def health():
 @app.get('/api/quote')
 def quote():
     with connect(readonly=True) as db:
-        return respond(services.quote(db, request.args['vehicle_id'], request.args['refueled_on'], request.args.get('refueled_time')))
+        return respond(services.quote(db, request.args['vehicle_id'], request.args['refueled_on'], request.args.get('refueled_time'), request.args.get('fuel_type_id')))
 
 def mutate(action):
     data = read_data()

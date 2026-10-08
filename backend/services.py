@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlsplit
 from backend.db import connect
 from backend.serialization import serialize
-from prices import VN, FUEL_CODES, fetch_prices
+from prices import VN, FUEL_CODES, fetch_prices, PriceSourceError
 
 ORDER = "refueled_on, COALESCE(refueled_time, TIME '23:59'), COALESCE(odometer_tenths, 999999999), substring(id from 2)::bigint"
 
@@ -65,8 +65,10 @@ def vehicle_by_id(db, vehicle_id):
         raise ValueError('Xe không tồn tại.')
     return row
 
-def quote(db, vehicle_id, refueled_on, refueled_time=None):
+def quote(db, vehicle_id, refueled_on, refueled_time=None, fuel_type_id=None):
     vehicle = vehicle_by_id(db, vehicle_id)
+    fuel_id = fuel_type_id or vehicle['default_fuel_type_id']
+    fuel_by_id(db, fuel_id)
     day = date.fromisoformat(refueled_on) if isinstance(refueled_on, str) else refueled_on
     clock = time.fromisoformat(refueled_time) if isinstance(refueled_time, str) and refueled_time else (refueled_time or None)
     if clock:
@@ -75,13 +77,13 @@ def quote(db, vehicle_id, refueled_on, refueled_time=None):
     cutoff = datetime.combine(day, clock or time(23, 59), VN)
     row = db.execute("""SELECT * FROM fuel_prices WHERE fuel_type_id=%s AND price_zone=%s AND effective_at <= %s
         ORDER BY effective_at DESC, CASE source_url WHEN 'manual' THEN 0 ELSE 1 END, updated_at DESC, substring(id from 2)::bigint DESC LIMIT 1""",
-        (vehicle['default_fuel_type_id'], vehicle['price_zone'], cutoff)).fetchone()
+        (fuel_id, vehicle['price_zone'], cutoff)).fetchone()
     changes = db.execute("""SELECT 1 FROM fuel_prices WHERE fuel_type_id=%s AND price_zone=%s
         AND effective_at > %s AND effective_at < %s LIMIT 1""",
-        (vehicle['default_fuel_type_id'], vehicle['price_zone'], start, start + timedelta(days=1))).fetchone()
+        (fuel_id, vehicle['price_zone'], start, start + timedelta(days=1))).fetchone()
     needs_time = bool(not clock and changes)
     return {'price': dict(row) if row else None, 'needs_time': needs_time,
-        'fuel_type_id': vehicle['default_fuel_type_id'], 'price_zone': vehicle['price_zone'],
+        'fuel_type_id': fuel_id, 'price_zone': vehicle['price_zone'],
         'message': 'Ngày này có thay đổi giá. Chọn giờ đổ để áp dụng đúng đơn giá.' if needs_time else
         ('' if row else 'Chưa có giá cho ngày này. Hãy cập nhật hoặc bổ sung giá đã áp dụng.')}
 
@@ -110,15 +112,19 @@ def save_log(db, data, log_id=None, imported=False):
     cost = number(data['total_cost_vnd'], 'Số tiền', Decimal(1))
     if cost != cost.to_integral_value():
         raise ValueError('Số tiền phải là số đồng nguyên.')
+    requested_fuel = data.get('fuel_type_id')
+    if requested_fuel in ('', None):
+        requested_fuel = old['fuel_type_id'] if old else vehicle['default_fuel_type_id']
+    requested_fuel = fuel_by_id(db, requested_fuel)['id']
     fuel_price_id = None
     if imported:
         price = number(data['unit_price_vnd_per_liter'], 'Đơn giá')
-        fuel, zone = vehicle['default_fuel_type_id'], vehicle['price_zone']
-    elif old and old['vehicle_id'] == vehicle['id'] and old['refueled_on'] == day and old['refueled_time'] == clock:
+        fuel, zone = requested_fuel, vehicle['price_zone']
+    elif old and old['vehicle_id'] == vehicle['id'] and old['refueled_on'] == day and old['refueled_time'] == clock and old['fuel_type_id'] == requested_fuel:
         price = Decimal(old['unit_price_vnd_per_liter'])
         fuel_price_id, fuel, zone = old['fuel_price_id'], old['fuel_type_id'], old['price_zone']
     else:
-        result = quote(db, vehicle['id'], day, clock)
+        result = quote(db, vehicle['id'], day, clock, requested_fuel)
         if result['needs_time'] or result['price'] is None:
             raise ValueError(result['message'])
         chosen = result['price']
@@ -248,6 +254,8 @@ def owns_sync_lock(db, token):
 def sync_prices():
     token = acquire_sync_lock()
     try:
+        with connect() as db:
+            if not owns_sync_lock(db,token):raise ValueError('Lượt cập nhật đã hết hạn.')
         rows = fetch_prices()
         with connect() as db:
             if not owns_sync_lock(db, token):
@@ -261,7 +269,8 @@ def sync_prices():
             set_meta(db, 'price_sync_error', '')
         return len(rows)
     except (ValueError, KeyError, TypeError, OSError) as error:
-        message = 'Chưa cập nhật được giá Petrolimex. Giá đã lưu vẫn được giữ; bạn có thể bổ sung giá thủ công.'
+        reason=str(error) if isinstance(error,PriceSourceError) else 'Chưa cập nhật được giá Petrolimex.'
+        message = reason+' Giá đã lưu vẫn được giữ; bạn có thể bổ sung giá thủ công.'
         with connect() as db:
             if owns_sync_lock(db, token):
                 set_meta(db, 'price_sync_error', message)
