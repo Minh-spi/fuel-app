@@ -43,7 +43,7 @@ npm.cmd run setup:ocr
 
 Mở http://127.0.0.1:8000. Có thể thêm `--host 0.0.0.0` để truy cập từ điện thoại cùng mạng. Chỉ sync giá khi bấm cập nhật. Model OCR được pin qua npm, ảnh xử lý tại trình duyệt.
 
-Trong `.env.local`, điền thêm `SUPABASE_URL` và `SUPABASE_ANON_KEY` từ Supabase → Settings → API Keys. Thêm `http://127.0.0.1:8000` vào Supabase Auth → URL Configuration → Redirect URLs để xác nhận email và đặt lại mật khẩu hoạt động local.
+Trong `.env.local`, lấy `SUPABASE_URL` ở Supabase Dashboard → **Connect** → **Project URL** (hoặc **Integrations → Data API → API URL**); lấy `SUPABASE_ANON_KEY`/`SUPABASE_PUBLISHABLE_KEY` riêng ở **Settings → API Keys**. URL phải dạng `https://<project-ref>.supabase.co`, không phải key hay database connection string. Thêm `http://127.0.0.1:8000` vào Supabase Auth → URL Configuration → Redirect URLs để xác nhận email và đặt lại mật khẩu hoạt động local.
 
 ## Nhập lịch sử giá PVOIL một lần
 

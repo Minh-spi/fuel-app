@@ -21,8 +21,8 @@ Trình duyệt ── app/API ──> Vercel ── DATABASE_URL ──> Supabas
 | `DATABASE_URL` | Supabase → **Connect** → **Transaction pooler**. Runtime connection cho local và Vercel, thường dùng cổng 6543. Khi role đã được tạo, dùng user `fuel_runtime.<project-ref>` và mật khẩu runtime. |
 | `MIGRATION_DATABASE_URL` | Supabase → **Connect** → **Session pooler**, dùng tài khoản quản trị để tạo/cập nhật schema và cấp quyền; thường cổng 5432. Chỉ dùng local, không đưa lên Vercel. |
 | `RUNTIME_DB_PASSWORD` | Mật khẩu riêng role PostgreSQL `fuel_runtime`, do bạn đặt khi khởi tạo role. Nếu role đã tồn tại, phải nhập đúng mật khẩu hiện tại; script không tự đổi mật khẩu. |
-| `SUPABASE_URL` | Supabase → **Project Settings → API**: Project URL. Dùng cho Supabase Auth. |
-| `SUPABASE_ANON_KEY` hoặc `SUPABASE_PUBLISHABLE_KEY` | Cùng trang API: public anon/publishable key. Chỉ cần điền một biến. Không dùng `service_role` key. |
+| `SUPABASE_URL` | Trong Supabase Dashboard, mở **Connect** và sao chép **Project URL**; hoặc **Integrations → Data API → API URL**. Giá trị có dạng `https://<project-ref>.supabase.co`. Đây là URL Auth dùng, không phải API key và không phải chuỗi kết nối PostgreSQL. |
+| `SUPABASE_ANON_KEY` hoặc `SUPABASE_PUBLISHABLE_KEY` | **Settings → API Keys**: chọn public `anon` hoặc `publishable` key. Chỉ cần điền một biến; không dùng `service_role`/secret key. |
 | `APP_ORIGIN` | Khi chạy local, domain local app; trên Vercel, domain deployment chính. Không thêm dấu `/` cuối. |
 | `CRON_SECRET` | Chuỗi ngẫu nhiên riêng dài tối thiểu 32 ký tự để bảo vệ endpoint Cron. Local có thể để trống nếu không thử Cron; Vercel Production cần đặt. |
 | `LEGACY_OWNER_EMAIL` | Chỉ cần nếu PostgreSQL có dữ liệu cũ chưa gán chủ. Điền email đã xác nhận của tài khoản sẽ sở hữu dữ liệu đó. Nếu database mới hoàn toàn, để trống. |
@@ -51,8 +51,8 @@ Nếu đây không phải database mới, hãy sao lưu trước. Migration 002 
 | Biến | Giá trị cần đặt |
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL **Transaction pooler** của Supabase, user `fuel_runtime.<project-ref>`, mật khẩu runtime, SSL. |
-| `SUPABASE_URL` | Project URL Supabase. |
-| `SUPABASE_ANON_KEY` hoặc `SUPABASE_PUBLISHABLE_KEY` | Public key Supabase Auth; không dùng service-role key. |
+| `SUPABASE_URL` | Project URL Supabase có dạng `https://<project-ref>.supabase.co`; không phải key. |
+| `SUPABASE_ANON_KEY` hoặc `SUPABASE_PUBLISHABLE_KEY` | Public key lấy riêng trong **Settings → API Keys**; không dùng service-role/secret key. |
 | `APP_ORIGIN` | Domain Vercel chính của app. |
 | `CRON_SECRET` | Cùng secret dài tối thiểu 32 ký tự được dùng cho Cron. |
 | `LEGACY_OWNER_EMAIL` | Chỉ khi database có dữ liệu cũ chưa gán chủ; phải khớp email tài khoản đã xác nhận. |

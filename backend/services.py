@@ -89,7 +89,7 @@ def quote(db, vehicle_id, refueled_on, refueled_time=None, fuel_type_id=None, ow
     cutoff = datetime.combine(day, clock or time(23, 59), VN)
     row = db.execute("""SELECT * FROM fuel_prices WHERE fuel_type_id=%s AND price_zone=%s AND effective_at <= %s
         AND (source_url<>'manual' OR owner_id=%s)
-        ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%petrolimex.com.vn%' THEN 1 WHEN source_url ILIKE '%pvoil.com.vn%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC LIMIT 1""",
+        ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%%petrolimex.com.vn%%' THEN 1 WHEN source_url ILIKE '%%pvoil.com.vn%%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC LIMIT 1""",
         (fuel_id, vehicle['price_zone'], cutoff, owner_id)).fetchone()
     changes = db.execute("""SELECT 1 FROM fuel_prices WHERE fuel_type_id=%s AND price_zone=%s
         AND effective_at > %s AND effective_at < %s AND (source_url<>'manual' OR owner_id=%s) LIMIT 1""",
@@ -174,12 +174,12 @@ def snapshot(db, owner_id=None):
     if owner_id is None:
         vehicles = [dict(r) for r in db.execute('SELECT * FROM vehicles ORDER BY substring(id from 2)::bigint')]
         log_query = 'SELECT * FROM refueling_logs ORDER BY substring(vehicle_id from 2)::bigint,' + ORDER
-        price_query = "SELECT * FROM fuel_prices ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%petrolimex.com.vn%' THEN 1 WHEN source_url ILIKE '%pvoil.com.vn%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC"
+        price_query = "SELECT * FROM fuel_prices ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%%petrolimex.com.vn%%' THEN 1 WHEN source_url ILIKE '%%pvoil.com.vn%%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC"
         log_params=price_params=()
     else:
         vehicles = [dict(r) for r in db.execute('SELECT * FROM vehicles WHERE owner_id=%s ORDER BY substring(id from 2)::bigint', (owner_id,))]
         log_query = 'SELECT r.* FROM refueling_logs r JOIN vehicles v ON v.id=r.vehicle_id WHERE v.owner_id=%s ORDER BY substring(r.vehicle_id from 2)::bigint,' + ORDER.replace('refueled_on','r.refueled_on').replace('refueled_time','r.refueled_time').replace('odometer_tenths','r.odometer_tenths').replace('id from 2','r.id from 2')
-        price_query = "SELECT * FROM fuel_prices WHERE source_url<>'manual' OR owner_id=%s ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%petrolimex.com.vn%' THEN 1 WHEN source_url ILIKE '%pvoil.com.vn%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC"
+        price_query = "SELECT * FROM fuel_prices WHERE source_url<>'manual' OR owner_id=%s ORDER BY effective_at DESC, CASE WHEN source_url='manual' THEN 0 WHEN source_url ILIKE '%%petrolimex.com.vn%%' THEN 1 WHEN source_url ILIKE '%%pvoil.com.vn%%' THEN 2 ELSE 3 END, updated_at DESC, substring(id from 2)::bigint DESC"
         log_params=(owner_id,);price_params=(owner_id,)
     logs, previous, seen = [], {}, set()
     for row in db.execute(log_query, log_params):
