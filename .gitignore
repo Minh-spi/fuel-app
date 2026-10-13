@@ -8,7 +8,6 @@ test-results/
 .venv/
 .vercel/
 .env*
-!.env.example
 *.zip
 *.sqlite3
 *.jpg

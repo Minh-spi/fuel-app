@@ -49,7 +49,7 @@ Runtime URL có thể dùng SUPABASE_DB_URL/POSTGRES_URL nếu chưa có DATABAS
 
 ## GitHub và Vercel
 
-Commit `backend/`, `migrations/`, `public/` (trừ vendor), `scripts/`, `tests/`, app.py, server.py, prices.py, requirements*.txt, package*.json, vercel.json, .python-version, .gitignore, .vercelignore, .env.example và tài liệu README/DATABASE/DEPLOYMENT.
+Commit `backend/`, `migrations/`, `public/` (trừ vendor), `scripts/`, `tests/`, app.py, server.py, prices.py, requirements*.txt, package*.json, vercel.json, .python-version, .gitignore, .vercelignore và tài liệu README/DATABASE/DEPLOYMENT/CONFIGURATION.
 
 Không commit `note/`, `.env.local`, `.venv/`, node_modules, public/vendor, __pycache__. Ảnh mẫu từng ở root đã chuyển vào note; Git sẽ ghi nhận xóa đường dẫn cũ khi bạn stage thay đổi. Không commit file chứa mật khẩu.
 

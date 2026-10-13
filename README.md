@@ -36,9 +36,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 npm.cmd ci
 npm.cmd run setup:ocr
-# Chỉ sao chép nếu chưa có .env.local; không ghi đè mật khẩu đã lưu.
-if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
-# Điền thông tin kết nối rồi chạy:
+# Điền các biến trong .env.local theo hướng dẫn tại CONFIGURATION.md rồi chạy:
 .venv\Scripts\python.exe scripts/setup_database.py
 .venv\Scripts\python.exe server.py
 ```
