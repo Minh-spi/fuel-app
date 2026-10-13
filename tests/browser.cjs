@@ -9,7 +9,7 @@ async function main(){
   const python=process.env.FUEL_PYTHON || (process.platform==='win32'?'.venv\\Scripts\\python.exe':'.venv/bin/python');
   const reset=spawnSync(python,['tests/db_support.py'],{env:process.env,windowsHide:true,stdio:'inherit'});
   if(reset.status!==0)throw new Error('Test database reset refused/failed.');
-  const server=spawn(python,['server.py','--port',String(port)],{env:{...process.env,DATABASE_URL:process.env.TEST_DATABASE_URL},windowsHide:true,stdio:'ignore'});
+  const server=spawn(python,['server.py','--port',String(port)],{env:{...process.env,DATABASE_URL:process.env.TEST_DATABASE_URL,FUEL_TEST_AUTH_BYPASS:'1'},windowsHide:true,stdio:'ignore'});
   let browser;
   try{
     for(let i=0;i<50;i++){try{if((await fetch(base+'/api/state')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -24,7 +24,7 @@ async function main(){
     await page.locator('#vehicle-form [name=transmission_type]').selectOption('automatic');
     await page.locator('#vehicle-form [name=brand]').fill('Honda');
     await page.locator('#vehicle-form [name=model]').fill('Vision');
-    await page.locator('#vehicle-form [name=tank_capacity_liters]').fill('4.9');
+    await page.locator('#vehicle-form [name=tank_capacity_liters]').fill('4,9');
     await expect(page.locator('#vehicle-form [name=default_fuel_type_id]')).toHaveValue('F1');
     await page.locator('#vehicle-form [type=submit]').click();
     await expect(page.locator('#vehicle-dialog')).not.toBeVisible();
@@ -61,9 +61,9 @@ async function main(){
     await page.locator('#rotate-photo').click();
     await page.locator('#read-odo').click();
     await expect(page.locator('#ocr-result')).toBeVisible({timeout:60000});
-    await expect(page.locator('#ocr-number')).toHaveValue('17054.5');
+    await expect(page.locator('#ocr-number')).toHaveValue('17.054,5');
     await page.locator('#use-odo').click();
-    await expect(page.locator('#odo')).toHaveValue('17054.5');
+    await expect(page.locator('#odo')).toHaveValue('17.054,5');
     await page.locator('#save-log').click();
     await expect(page.locator('#log-dialog')).not.toBeVisible();
     await page.locator('#add-log').click();

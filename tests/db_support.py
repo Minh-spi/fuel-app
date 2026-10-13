@@ -16,7 +16,7 @@ def reset():
     url = test_url()
     apply_migrations(url)
     with connect(url, migration=True) as db:
-        db.execute('TRUNCATE refueling_logs, fuel_prices, vehicles, app_metadata, app_locks RESTART IDENTITY CASCADE')
+        db.execute('TRUNCATE refueling_logs, fuel_prices, vehicles, app_metadata, app_locks, price_sync_runs RESTART IDENTITY CASCADE')
         for sequence in ('vehicles_id_seq','fuel_prices_id_seq','refueling_logs_id_seq'):
             db.execute('ALTER SEQUENCE fuel_app.'+sequence+' RESTART WITH 1')
 

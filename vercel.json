@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "flask",
   "buildCommand": "npm ci && npm run setup:ocr",
+  "crons": [
+    { "path": "/api/prices/cron", "schedule": "30 10 * * *" }
+  ],
   "functions": {
     "app.py": {
       "maxDuration": 60,

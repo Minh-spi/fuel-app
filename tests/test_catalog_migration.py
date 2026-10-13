@@ -47,7 +47,7 @@ class CatalogMigrationTests(unittest.TestCase):
             self.assertEqual(state['prices'][0]['source_url'],'manual')
             self.assertEqual(db.execute("INSERT INTO vehicles(name) VALUES('Next') RETURNING id").fetchone()['id'],'V100')
             tables={r['tablename'] for r in db.execute("SELECT tablename FROM pg_tables WHERE schemaname='fuel_app'")}
-            self.assertEqual(tables,{'vehicles','fuel_types','fuel_prices','refueling_logs','app_metadata','app_locks','schema_migrations'})
+            self.assertEqual(tables,{'vehicles','fuel_types','fuel_prices','refueling_logs','app_metadata','app_locks','schema_migrations','price_sync_runs'})
 
     def test_vehicle_details_partial_edit_and_historical_fuel(self):
         with connect() as db:
@@ -70,7 +70,33 @@ class CatalogMigrationTests(unittest.TestCase):
             services.put_price(db,{**base,'source_url':'manual','unit_price_vnd_per_liter':25000})
             services.put_price(db,{**base,'source_url':'https://example.com/prices','unit_price_vnd_per_liter':26000})
             self.assertEqual(services.quote(db,'V1','2026-06-01')['price']['unit_price_vnd_per_liter'],25000)
+            services.put_price(db,{**base,'fuel_type_id':'F2','source_url':'https://www.pvoil.com.vn/tin-gia-xang-dau','unit_price_vnd_per_liter':24000})
+            services.put_price(db,{**base,'fuel_type_id':'F2','source_url':'https://portals.petrolimex.com.vn/prices','unit_price_vnd_per_liter':24500})
+            self.assertEqual(services.quote(db,'V1','2026-06-01',fuel_type_id='F2')['price']['unit_price_vnd_per_liter'],24500)
             with self.assertRaises(ValueError):services.put_price(db,{**base,'source_url':'','unit_price_vnd_per_liter':25000})
+
+    def test_legacy_owner_claim_and_account_isolation(self):
+        first='11111111-1111-4111-8111-111111111111';second='22222222-2222-4222-8222-222222222222'
+        with patch.dict(os.environ,LEGACY_OWNER_EMAIL='owner@example.com'),connect() as db:
+            services.save_vehicle(db,{'name':'Xe cũ'})
+            services.put_price(db,dict(fuel_type_id='F1',price_zone=1,effective_at='2026-01-01T00:00',unit_price_vnd_per_liter=25000,source_url='manual'))
+            services.claim_legacy_data(db,first,'owner@example.com',True)
+            services.claim_legacy_data(db,second,'other@example.com',True)
+            self.assertEqual([v['id'] for v in services.snapshot(db,first)['vehicles']],['V1'])
+            self.assertEqual(services.snapshot(db,second)['vehicles'],[])
+            self.assertEqual(services.snapshot(db,first)['prices'][0]['owner_id'],first)
+            self.assertEqual(services.snapshot(db,second)['prices'],[])
+            services.save_vehicle(db,{'name':'Xe riêng'},second)
+            self.assertEqual([v['id'] for v in services.snapshot(db,second)['vehicles']],['V2'])
+            with self.assertRaises(ValueError):services.vehicle_by_id(db,'V1',second)
+
+    def test_price_sync_counts_and_daily_idempotency(self):
+        rows=[dict(fuel_type='E10 RON 95-III',fuel_code='E10_RON95_III',price_zone=1,effective_at='2026-10-08T15:00+07:00',unit_price_vnd=28250,source_url='https://www.petrolimex.com.vn/prices',source_updated_at='2026-10-08T08:00:00Z')]
+        with patch('backend.services.fetch_prices',return_value=rows):
+            self.assertEqual(services.sync_prices(),{'observed_rows':1,'inserted_rows':1,'changed_rows':0,'unchanged_rows':0})
+            self.assertEqual(services.sync_prices(),{'observed_rows':1,'inserted_rows':0,'changed_rows':0,'unchanged_rows':1})
+            services.sync_prices_daily()
+            self.assertTrue(services.sync_prices_daily()['skipped'])
 
     def test_concurrent_id_generation(self):
         def create(_):

@@ -20,6 +20,7 @@ class MigrationApiTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         reset()
+        app.config['TESTING']=True
         self.client = app.test_client()
 
     def post(self, path, data):

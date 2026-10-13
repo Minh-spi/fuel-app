@@ -1,47 +1,49 @@
 # Kế hoạch nâng cấp
 
-Các mục dưới đây là ý tưởng đã thống nhất để xem xét ở các phiên bản sau. Chúng chưa được triển khai và không làm thay đổi luồng đang dùng.
+Cập nhật 13/10/2026. Trạng thái ghi theo code trong repo; phần cần cấu hình trên Supabase/Vercel hoặc xác nhận với dữ liệu thật được ghi riêng bên dưới.
 
-## Nhận diện ODO tự động tốt hơn
+## Nhận diện ODO tự động tốt hơn — Đã triển khai
 
-- Giữ cách chụp ảnh ODO và xác nhận/sửa số trước khi lưu.
-- Mặc định tự tìm vùng hiển thị công-tơ-mét để người dùng không phải khoanh vùng thủ công mỗi lần.
-- Giảm nhầm các số tốc độ và vạch chia trên mặt đồng hồ; hỗ trợ ảnh xoay, thiếu sáng, lóa và nghiêng.
-- Chỉ đề nghị khoanh vùng ODO thủ công khi tự tìm vùng hoặc OCR có độ tin cậy thấp.
-- Tính quãng đường từ hai mốc ODO đã xác nhận gần nhất của cùng xe; ODO đầu tiên là baseline.
+- OCR chạy trên thiết bị bằng Tesseract.js, tự dò cụm số trên ảnh toàn khung; không bắt buộc khoanh vùng.
+- Thử nhiều hướng ảnh và lượt tăng tương phản; cho phép xoay ảnh hoặc khoanh vùng thủ công khi cần.
+- Hiển thị kết quả để người dùng kiểm tra/sửa trước khi lưu; lưu nguồn ODO là ảnh đã xác nhận.
+- ODO đầu tiên vẫn là baseline, không tính quãng đường trước đó.
+- Cần kiểm chứng thêm trên bộ ảnh đồng hồ thật đa dạng; OCR có thể đọc sai và không tự ghi log.
 
-## Thống nhất cách nhập và hiển thị số
+## Thống nhất cách nhập và hiển thị số — Đã triển khai
 
-- Dùng một quy ước định dạng theo tiếng Việt trên toàn app: dấu chấm phân tách hàng nghìn, dấu phẩy cho phần thập phân (ví dụ `1.234,5 km`). Tiền VND hiển thị số nguyên có phân tách hàng nghìn.
-- Chuẩn hóa dữ liệu số thành giá trị số trước khi lưu/tính toán; chỉ định dạng ở giao diện để phép tính không phụ thuộc dấu phân cách.
-- Ô nhập và thông báo lỗi phải theo cùng quy ước; kiểm tra các trường tiền, ODO, lít và đơn giá trên cả điện thoại lẫn máy tính.
+- Dùng quy ước tiếng Việt: dấu chấm phân tách hàng nghìn, dấu phẩy cho thập phân (`1.234,5 km`); VND hiển thị số nguyên.
+- Chuyển giá trị nhập thành số chuẩn trước khi gửi API. Giá, tiền, ODO và dung tích bình được định dạng thống nhất trên giao diện.
+- Kiểm tra tự động phần parsing/hiển thị trên browser test vẫn cần chạy với PostgreSQL test riêng.
 
-## Dữ liệu giá nhiên liệu lịch sử đáng tin cậy
+## Dữ liệu giá nhiên liệu lịch sử đáng tin cậy — Công cụ backfill đã có; chưa nhập dữ liệu vào Supabase
 
-- Khảo sát khả năng lấy bảng giá Petrolimex chính thức cho toàn bộ khoảng thời gian từ đầu năm hiện tại đến ngày cào; lưu ngày giá có hiệu lực, nhiên liệu, vùng, đơn giá, URL nguồn và thời điểm lấy dữ liệu.
-- Không tự điền hoặc tạo giá cho những ngày mà nguồn không xác nhận. Đánh dấu khoảng trống để người dùng có thể bổ sung thủ công với nguồn `manual`.
-- Tách lịch sử lần cào/kết quả đồng bộ khỏi bảng giá hiệu lực. Cào lại cùng ngày không tạo bản ghi giá trùng nếu giá không đổi; nếu giá đổi thì lưu đúng ngày hiệu lực theo nguồn.
-- Ưu tiên cào khi người dùng bấm cập nhật trước. Sau khi xác minh nguồn, múi giờ, giới hạn truy cập và xử lý lỗi, cân nhắc tác vụ chạy tự động mỗi ngày, tối đa một lần/ngày; chưa cấu hình Cron trước khi kiểm thử.
-- Khi đối chiếu log cũ, không âm thầm thay đơn giá hoặc số lít đã lưu. Cho phép xem giá tham khảo và chọn áp dụng có chủ ý; không dùng giá hiện tại để suy ngược giá lịch sử.
+- Đã xác minh endpoint sidebar Petrolimex cung cấp giá hiện hành có cấu trúc; lưu giá theo nhiên liệu, vùng, thời điểm hiệu lực, URL và thời điểm lấy.
+- Bấm cập nhật ghi kết quả đồng bộ riêng; thống kê giá thêm mới, đổi, giữ nguyên. Cron Vercel chạy lúc 17:30 giờ Việt Nam, khóa tối đa một lượt/ngày.
+- Giá cũ không bị sửa theo lần đồng bộ mới. Khi sửa log, giá snapshot được giữ cho tới khi người dùng chủ động dùng giá tham khảo hoặc nhập giá khác.
+- Trang lịch sử PVOIL có bộ chọn kỳ giá và bảng hiển thị theo kỳ. Có công cụ chạy một lần bằng Edge thật để thu thập các mốc từ đầu năm, cùng importer preview mặc định và ghi database chỉ khi truyền `--apply`.
+- Importer chỉ nhận loại nhiên liệu khớp danh mục app, giữ URL PVOIL làm nguồn, không sửa snapshot log; nếu bảng PVOIL không tách vùng thì mức công bố chung được lưu cho cả hai vùng. Cùng thời điểm, quote ưu tiên giá Petrolimex.
+- **Chưa chạy bước thu thập/import thật.** Trang trả thử thách Cloudflare cho môi trường tự động; công cụ không vượt thử thách. Cần chạy capture trên máy người dùng, xác minh file JSON, rồi mới `--apply` vào database đã cấu hình.
+- Giao diện hiển thị các mốc đã có từ đầu năm, báo khoảng trống và cho nhập giá thủ công với nguồn `manual`.
+- Cron chỉ bắt đầu chạy sau khi deploy production và cấu hình `CRON_SECRET`; cần kiểm tra log lần chạy đầu tiên trên Vercel.
 
-## Sửa dữ liệu cũ mà không tự điền sai
+## Sửa dữ liệu cũ mà không tự điền sai — Đã triển khai
 
-- Khi sửa log cũ, giữ nguyên snapshot giá/lít đang lưu và không tự thay bằng giá thị trường tra được nếu người dùng chưa chọn.
-- Không điền phỏng đoán vào trường thiếu. Để trống trường chưa biết và cho người dùng chủ động nhập hoặc chọn một giá lịch sử đã xác minh.
-- Nếu đổi ngày, nhiên liệu, số tiền hoặc đơn giá, báo rõ trường tính toán nào sẽ thay đổi; chỉ tính lại khi người dùng xác nhận lựa chọn đó.
-- Giữ khả năng sửa và xóa log, đồng thời kiểm tra lại thứ tự ODO và quãng đường liên quan sau khi sửa.
+- Khi mở log cũ, giữ giá đã lưu; giá tra được chỉ là tham khảo. Chỉ cập nhật snapshot khi người dùng chọn rõ ràng.
+- Cho sửa đơn giá thủ công; số lít được tính từ số tiền/đơn giá sau khi chọn. Trường ODO còn thiếu vẫn để trống.
+- Sửa/xóa log vẫn kiểm tra thứ tự ODO và tính lại khoảng cách giữa các mốc cùng xe.
 
-## Tài khoản và bảo toàn dữ liệu qua phiên bản
+## Tài khoản và bảo toàn dữ liệu qua phiên bản — Code đã triển khai, cần cấu hình/xác nhận môi trường
 
-- Bổ sung đăng ký, đăng nhập, đăng xuất và khôi phục mật khẩu; mỗi tài khoản chỉ truy cập xe, log và dữ liệu riêng của mình.
-- Gắn dữ liệu hiện có với một tài khoản trước khi bật yêu cầu đăng nhập, để dữ liệu cũ không biến mất hoặc bị gán nhầm.
-- Mỗi lần đổi schema dùng migration có phiên bản, theo hướng giữ dữ liệu; không xóa/tạo lại database khi cập nhật app.
-- Thiết lập và kiểm thử backup/khôi phục trước các thay đổi schema lớn; kiểm tra deployment mới với bản sao dữ liệu trước khi đưa vào dùng.
-- Kiểm thử đường nâng cấp từ phiên bản đang chạy và xác nhận dữ liệu còn nguyên sau deploy/rollback.
+- Có đăng ký, đăng nhập, đăng xuất, làm mới phiên và khôi phục mật khẩu qua Supabase Auth; API dữ liệu yêu cầu token và giới hạn xe/giá thủ công theo tài khoản.
+- Migration 003 thêm chủ sở hữu và nhật ký sync theo hướng giữ dữ liệu. Trước lần đăng nhập đầu nếu DB có dữ liệu cũ, phải đặt `LEGACY_OWNER_EMAIL` là email đã xác nhận của chủ sở hữu; nếu thiếu cấu hình, app từ chối gán dữ liệu để tránh chiếm nhầm.
+- Cần chạy migration 003 trên Supabase, cấp quyền role runtime, cấu hình biến Supabase/Vercel, xác nhận tài khoản sở hữu dữ liệu cũ và chạy công cụ PVOIL nếu muốn nạp lịch sử.
+- Migration lưu bản xuất JSON phục vụ đối chiếu; đây **không thay thế** backup/restore toàn PostgreSQL. Chưa cấu hình hoặc thử khôi phục backup Supabase.
+- Chưa xác nhận nâng cấp/rollback trên bản sao production vì workspace không có database test chuyên dụng; không chạy test reset trên database production.
 
-## Nguyên tắc triển khai
+## Điều kiện hoàn tất vận hành
 
-- Chưa thực hiện mục OCR trong phiên bản hiện tại.
-- Ưu tiên giải pháp chạy trên thiết bị bằng Tesseract.js hiện có; chỉ cân nhắc dịch vụ OCR ngoài nếu thử nghiệm cho thấy cần thiết.
-- Đánh giá bằng ảnh thực tế từ nhiều góc chụp và yêu cầu xác nhận của người dùng trước khi ghi dữ liệu.
-- Không thay đổi giao diện hay luồng nhập liệu hiện tại khi chưa bắt đầu hạng mục này.
+- Cấu hình `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `APP_ORIGIN`, `CRON_SECRET` và `LEGACY_OWNER_EMAIL` (nếu có dữ liệu cũ) trên Vercel; đặt URL chuyển hướng Auth đúng domain.
+- Chạy migrations 001–003 trên Supabase và kiểm tra `/api/health` trả `database: ready`.
+- Chạy test tích hợp và browser trên database riêng có tên kết thúc `_test`, sau đó xác nhận login, dữ liệu cũ, thêm/sửa/xóa log, đồng bộ giá và cron.
+- Thiết lập backup tự động/khôi phục thử trước khi coi việc bảo toàn dữ liệu là hoàn tất.

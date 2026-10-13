@@ -18,19 +18,20 @@ def database_problem(error):
 def check_database():
     with connect(readonly=True) as db:
         # Exercise every column used by the application without returning user data.
-        for table in ('vehicles', 'refueling_logs', 'fuel_prices', 'app_metadata', 'app_locks','fuel_types'):
+        for table in ('vehicles', 'refueling_logs', 'fuel_prices', 'app_metadata', 'app_locks','fuel_types','price_sync_runs'):
             columns = {
-                'vehicles':'id,name,license_plate,default_fuel_type_id,price_zone,city,tank_capacity_liters,created_at,vehicle_type,transmission_type,brand,model,model_year,engine_displacement_cc,purchased_on,notes,is_active,updated_at',
+                'vehicles':'id,owner_id,name,license_plate,default_fuel_type_id,price_zone,city,tank_capacity_liters,created_at,vehicle_type,transmission_type,brand,model,model_year,engine_displacement_cc,purchased_on,notes,is_active,updated_at',
                 'refueling_logs':'id,vehicle_id,refueled_on,refueled_time,odometer_tenths,total_cost_vnd,unit_price_vnd_per_liter,volume_liters,notes,fuel_price_id,fuel_type_id,price_zone,odo_source,created_at,updated_at',
-                'fuel_prices':'id,fuel_type_id,price_zone,effective_at,unit_price_vnd_per_liter,source_url,source_updated_at,created_at,updated_at',
+                'fuel_prices':'id,owner_id,fuel_type_id,price_zone,effective_at,unit_price_vnd_per_liter,source_url,source_updated_at,created_at,updated_at',
                 'fuel_types':'id,code,name,category,is_active,created_at,updated_at',
                 'app_metadata':'key,value', 'app_locks':'name,token,expires_at',
+                'price_sync_runs':'id,run_date,trigger,status,started_at,finished_at,observed_rows,inserted_rows,changed_rows,unchanged_rows,error_message',
             }[table]
             db.execute(f'SELECT {columns} FROM {table} LIMIT 0')
             for privilege in (('SELECT',) if table=='fuel_types' else ('SELECT', 'INSERT', 'UPDATE', 'DELETE')):
                 if not db.execute("SELECT has_table_privilege(current_user,%s,%s) AS allowed", ('fuel_app.'+table, privilege)).fetchone()['allowed']:
                     raise psycopg.errors.InsufficientPrivilege()
-        for sequence in ('vehicles_id_seq','refueling_logs_id_seq','fuel_prices_id_seq'):
+        for sequence in ('vehicles_id_seq','refueling_logs_id_seq','fuel_prices_id_seq','price_sync_runs_id_seq'):
             if not db.execute("SELECT has_sequence_privilege(current_user,%s,'USAGE') AS allowed", ('fuel_app.'+sequence,)).fetchone()['allowed']:
                 raise psycopg.errors.InsufficientPrivilege()
     return {'ok': True, 'database': 'ready'}

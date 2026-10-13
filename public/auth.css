@@ -1,0 +1,11 @@
+.auth-shell{margin:8vh auto 0;padding:20px;width:min(100% - 24px,480px)}
+.auth-card{padding:32px;background:#fff;border:1px solid #e0e8e2;border-radius:16px}
+.auth-card h1{font-size:26px}
+.auth-card .brand{margin-bottom:24px}
+.auth-links{display:flex;justify-content:space-between;gap:12px;margin-top:10px}
+.auth-links button{padding:8px;background:transparent;color:#167858;font-size:12px}
+.auth-card #auth-message{min-height:24px;font-size:13px}
+.auth-card #auth-message.error{color:#b33}
+.account-footer{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:24px;color:#77877f;font-size:12px}
+.account-footer button{padding:8px 12px;font-size:12px}
+@media(max-width:700px){.auth-shell{margin:2vh auto 0;padding:10px}.auth-card{padding:24px}}
