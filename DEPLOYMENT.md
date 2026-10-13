@@ -5,7 +5,6 @@
 Migration 002 thay đổi tên bảng/cột và ID; phải nâng cấp backend/frontend cùng schema. Không chạy migration production trong lúc app cũ tiếp tục ghi.
 
 1. Thử migration trên database thử hoặc bản sao. Giữ commit/deployment cũ và backup PostgreSQL trước thay đổi. Dừng ghi/tạm bảo trì app khi chuyển production.
-2. Điền `MIGRATION_DATABASE_URL` vào `.env.local` local, dùng admin Session pooler (5432) hoặc direct URL đúng project. `DATABASE_URL` dùng runtime Transaction pooler (6543). Không nhầm với TEST_DATABASE_URL.
 3. Chạy `.venv\Scripts\python.exe scripts/migrate.py`. Script chạy migration còn thiếu trong transaction, trước 002 khóa ghi và xuất bản sao các bảng v1/sequence vào `note/backups/`. Nếu không ghi được backup hoặc SQL lỗi, rollback transaction. Bản JSON này dùng đối chiếu/khôi phục thủ công với schema v1; không thay thế backup PostgreSQL đầy đủ và không có nút restore tự động.
 4. Chạy `.venv\Scripts\python.exe scripts/create_runtime_role.py` để bảo đảm quyền đọc danh mục và dùng sequence mới. Không đổi mật khẩu role đang có.
 5. Chạy `.venv\Scripts\python.exe scripts/check_database.py`, cần `database: ready`.
@@ -37,7 +36,6 @@ Tạo Supabase project → Connect → sao chép Session/Transaction pooler URL,
 | RUNTIME_DB_PASSWORD | Mật khẩu riêng cho role mới fuel_runtime, chỉ local |
 | DATABASE_URL | Transaction pooler; user fuel_runtime.PROJECT_REF; mật khẩu runtime |
 | APP_ORIGIN | URL app trên Vercel hoặc http://127.0.0.1:8000 ở local |
-| TEST_DATABASE_URL | Database thử riêng, tên kết thúc _test |
 | SUPABASE_URL | Project URL dạng https://PROJECT_REF.supabase.co |
 | SUPABASE_ANON_KEY | Anon/publishable key cho Auth, không dùng service-role key |
 | LEGACY_OWNER_EMAIL | Email đã xác nhận sở hữu dữ liệu cũ; bắt buộc trước đăng nhập đầu tiên nếu database có bản ghi chưa gán chủ |

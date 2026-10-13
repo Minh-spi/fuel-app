@@ -29,7 +29,7 @@ def connection_info(url=None):
 @contextmanager
 def connect(url=None, *, readonly=False, migration=False):
     info = connection_info(url)
-    # SSL is mandatory for remote databases; local disposable test databases may disable it.
+    # SSL is mandatory for remote PostgreSQL connections.
     if info.get('host') not in ('localhost', '127.0.0.1', '::1'):
         info['sslmode'] = info.get('sslmode') if info.get('sslmode') in ('verify-ca', 'verify-full') else 'require'
     info['connect_timeout'] = integer_setting('DB_CONNECT_TIMEOUT_SECONDS', 5, maximum=30)

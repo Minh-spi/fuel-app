@@ -26,7 +26,6 @@ Trình duyệt ── app/API ──> Vercel ── DATABASE_URL ──> Supabas
 | `APP_ORIGIN` | Khi chạy local, domain local app; trên Vercel, domain deployment chính. Không thêm dấu `/` cuối. |
 | `CRON_SECRET` | Chuỗi ngẫu nhiên riêng dài tối thiểu 32 ký tự để bảo vệ endpoint Cron. Local có thể để trống nếu không thử Cron; Vercel Production cần đặt. |
 | `LEGACY_OWNER_EMAIL` | Chỉ cần nếu PostgreSQL có dữ liệu cũ chưa gán chủ. Điền email đã xác nhận của tài khoản sẽ sở hữu dữ liệu đó. Nếu database mới hoàn toàn, để trống. |
-| `TEST_DATABASE_URL` | Chỉ cần chạy kiểm thử database; phải trỏ đến database thử riêng có tên kết thúc bằng `_test`. Không dùng production. |
 
 Không cần thêm các biến timeout trừ khi muốn thay đổi mặc định của backend. Không dán dấu nháy quanh giá trị. Với connection string, ký tự đặc biệt trong mật khẩu phải được URL-encode.
 
@@ -57,7 +56,6 @@ Nếu đây không phải database mới, hãy sao lưu trước. Migration 002 
 | `CRON_SECRET` | Cùng secret dài tối thiểu 32 ký tự được dùng cho Cron. |
 | `LEGACY_OWNER_EMAIL` | Chỉ khi database có dữ liệu cũ chưa gán chủ; phải khớp email tài khoản đã xác nhận. |
 
-**Không đưa** `MIGRATION_DATABASE_URL`, `RUNTIME_DB_PASSWORD` hoặc `TEST_DATABASE_URL` lên Vercel. Không import nguyên `.env.local` vào Vercel vì file local chứa thông tin chỉ dành cho quản trị/migration. File `.env.vercel` chỉ dành cho import vào Vercel; không đưa giá trị thật của nó lên GitHub.
 
 ## URL đăng nhập Supabase
 

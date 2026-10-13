@@ -15,10 +15,10 @@ class DatabaseConfigurationTests(unittest.TestCase):
         self.assertIn('Redeploy',response.get_json()['error'])
 
     def test_aliases_and_explicit_priority(self):
-        url='postgresql://user:secret@localhost:5432/fuel_test'
+        url='postgresql://user:secret@localhost:5432/fuel_learning'
         for name in ('DATABASE_URL','SUPABASE_DB_URL','POSTGRES_URL'):
             with patch.dict(os.environ,{name:url},clear=True):
-                self.assertEqual(connection_info()['dbname'],'fuel_test')
+                self.assertEqual(connection_info()['dbname'],'fuel_learning')
         with patch.dict(os.environ,{'DATABASE_URL':'https://wrong.example','POSTGRES_URL':url},clear=True):
             with self.assertRaises(ConfigurationError):connection_info()
 

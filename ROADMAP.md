@@ -39,11 +39,9 @@ Cập nhật 13/10/2026. Trạng thái ghi theo code trong repo; phần cần c�
 - Migration 003 thêm chủ sở hữu và nhật ký sync theo hướng giữ dữ liệu. Trước lần đăng nhập đầu nếu DB có dữ liệu cũ, phải đặt `LEGACY_OWNER_EMAIL` là email đã xác nhận của chủ sở hữu; nếu thiếu cấu hình, app từ chối gán dữ liệu để tránh chiếm nhầm.
 - Cần chạy migration 003 trên Supabase, cấp quyền role runtime, cấu hình biến Supabase/Vercel, xác nhận tài khoản sở hữu dữ liệu cũ và chạy công cụ PVOIL nếu muốn nạp lịch sử.
 - Migration lưu bản xuất JSON phục vụ đối chiếu; đây **không thay thế** backup/restore toàn PostgreSQL. Chưa cấu hình hoặc thử khôi phục backup Supabase.
-- Chưa xác nhận nâng cấp/rollback trên bản sao production vì workspace không có database test chuyên dụng; không chạy test reset trên database production.
 
 ## Điều kiện hoàn tất vận hành
 
 - Cấu hình `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `APP_ORIGIN`, `CRON_SECRET` và `LEGACY_OWNER_EMAIL` (nếu có dữ liệu cũ) trên Vercel; đặt URL chuyển hướng Auth đúng domain.
 - Chạy migrations 001–003 trên Supabase và kiểm tra `/api/health` trả `database: ready`.
-- Chạy test tích hợp và browser trên database riêng có tên kết thúc `_test`, sau đó xác nhận login, dữ liệu cũ, thêm/sửa/xóa log, đồng bộ giá và cron.
 - Thiết lập backup tự động/khôi phục thử trước khi coi việc bảo toàn dữ liệu là hoàn tất.

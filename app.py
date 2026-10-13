@@ -13,19 +13,9 @@ from backend.serialization import serialize
 from backend import services
 from backend import auth
 from backend.diagnostics import database_problem, check_database
-from psycopg.conninfo import conninfo_to_dict
 
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 20000
-
-def isolated_test_auth_bypass():
-    if os.environ.get('VERCEL') or os.environ.get('FUEL_TEST_AUTH_BYPASS')!='1':return False
-    test_url=os.environ.get('TEST_DATABASE_URL','').strip()
-    runtime=os.environ.get('DATABASE_URL','').strip()
-    try:
-        test=conninfo_to_dict(test_url);current=conninfo_to_dict(runtime)
-    except Exception:return False
-    return bool(test.get('dbname','').endswith('_test') and all(test.get(k)==current.get(k) for k in ('host','port','dbname','user')))
 
 def respond(data, status=200):
     return Response(json.dumps(serialize(data), ensure_ascii=False), status=status,
@@ -45,7 +35,7 @@ def validate_origin():
             if origin.rstrip('/') != allowed and not same_host:
                 return respond({'error': 'Origin không hợp lệ.'}, 403)
     if request.path.startswith('/api/') and request.path not in ('/api/health','/api/config') and not request.path.startswith('/api/auth/') and request.path != '/api/prices/cron':
-        if app.testing or isolated_test_auth_bypass():
+        if app.testing:
             g.owner_id=None
         else:
             header=request.headers.get('Authorization','')
@@ -77,7 +67,6 @@ def state():
 
 @app.get('/api/config')
 def public_app_config():
-    if isolated_test_auth_bypass():return respond({'auth_enabled':False})
     try:
         url,key=auth.public_config()
     except auth.AuthConfigurationError as error:

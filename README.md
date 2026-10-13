@@ -60,14 +60,13 @@ Lệnh đầu chỉ chụp; lệnh import mặc định chỉ preview. `--apply`
 
 ## Kiểm thử
 
-Chỉ dùng database PostgreSQL UTF-8 riêng có tên kết thúc `_test`; test sẽ xóa dữ liệu trong schema của database thử. Python đọc `TEST_DATABASE_URL` từ `.env.local` hoặc environment. Với npm, đặt biến này trong environment trước khi chạy.
+Run the unit tests that do not connect to PostgreSQL:
+
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover -s tests -v
-npm.cmd run test:ui
 ```
 
-UI test dùng Microsoft Edge headless, OCR ảnh số tổng hợp, mobile/desktop, xe mở rộng, giá theo giờ và lịch sử. Screenshots vào `note/test-results/`. Không dùng database production cho test.
 
 ## Nâng cấp / triển khai
 
